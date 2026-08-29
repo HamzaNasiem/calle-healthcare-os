@@ -1,0 +1,20 @@
+{
+  "type": "function",
+  "function": {
+    "name": "check_existing_patient",
+    "description": "Checks if a patient already exists in the system using their phone number.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The 10-digit phone number of the caller.",
+          "title": "Phone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone"
+      ]
+    }
+  }
+}

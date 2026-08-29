@@ -1,0 +1,112 @@
+[
+  {
+    "code": "G43.909",
+    "description": "Migraine, unspecified, not intractable, without status migrainosus",
+    "category": "Neurology"
+  },
+  {
+    "code": "M54.50",
+    "description": "Low back pain, unspecified",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M54.16",
+    "description": "Radiculopathy, lumbar region",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M17.11",
+    "description": "Primary osteoarthritis, right knee",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M17.12",
+    "description": "Primary osteoarthritis, left knee",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M16.11",
+    "description": "Primary osteoarthritis, right hip",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M16.12",
+    "description": "Primary osteoarthritis, left hip",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M75.101",
+    "description": "Unspecified rotator cuff tear or rupture of right shoulder, not specified as traumatic",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "M23.22",
+    "description": "Derangement of meniscus due to old tear or injury, right knee",
+    "category": "Musculoskeletal"
+  },
+  {
+    "code": "I10",
+    "description": "Essential (primary) hypertension",
+    "category": "Cardiovascular"
+  },
+  {
+    "code": "I50.9",
+    "description": "Heart failure, unspecified",
+    "category": "Cardiovascular"
+  },
+  {
+    "code": "I25.10",
+    "description": "Atherosclerotic heart disease of native coronary artery without angina pectoris",
+    "category": "Cardiovascular"
+  },
+  {
+    "code": "E11.9",
+    "description": "Type 2 diabetes mellitus without complications",
+    "category": "Endocrine & Metabolic"
+  },
+  {
+    "code": "R07.9",
+    "description": "Chest pain, unspecified",
+    "category": "Symptoms & Signs"
+  },
+  {
+    "code": "R10.9",
+    "description": "Abdominal pain, unspecified",
+    "category": "Symptoms & Signs"
+  },
+  {
+    "code": "R51.9",
+    "description": "Headache, unspecified",
+    "category": "Symptoms & Signs"
+  },
+  {
+    "code": "K21.9",
+    "description": "Gastro-esophageal reflux disease without esophagitis",
+    "category": "Gastroenterology"
+  },
+  {
+    "code": "K80.20",
+    "description": "Calculus of gallbladder without cholecystitis without obstruction",
+    "category": "Gastroenterology"
+  },
+  {
+    "code": "K40.90",
+    "description": "Unilateral inguinal hernia, without obstruction or gangrene, not specified as recurrent",
+    "category": "Gastroenterology"
+  },
+  {
+    "code": "H25.13",
+    "description": "Age-related nuclear cataract, bilateral",
+    "category": "Ophthalmology"
+  },
+  {
+    "code": "J01.90",
+    "description": "Acute sinusitis, unspecified",
+    "category": "Respiratory"
+  },
+  {
+    "code": "J44.9",
+    "description": "Chronic obstructive pulmonary disease, unspecified",
+    "category": "Respiratory"
+  }
+]

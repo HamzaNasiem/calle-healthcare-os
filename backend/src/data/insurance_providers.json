@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Aetna",
+    "phone": "1-800-624-0756",
+    "prior_auth_phone": "1-800-624-0756",
+    "payer_id": "60054",
+    "ivr_hints": "Press 2 for Provider Services, then press 1 for Prior Authorization, then say or enter Provider NPI followed by Patient Member ID.",
+    "ivr_hint": "Press 2 (Providers) -> 1 (Prior Auth) -> Enter NPI",
+    "turnaround_hours": 24,
+    "portal_url": "https://www.availity.com"
+  },
+  {
+    "name": "UnitedHealthcare",
+    "phone": "1-877-842-3210",
+    "prior_auth_phone": "1-877-842-3210",
+    "payer_id": "87726",
+    "ivr_hints": "Say 'Provider', then say 'Prior Authorization', then state medical specialty when prompted.",
+    "ivr_hint": "Say 'Provider' -> 'Prior Authorization' -> Specialty",
+    "turnaround_hours": 24,
+    "portal_url": "https://www.uhcprovider.com"
+  },
+  {
+    "name": "Blue Cross Blue Shield",
+    "phone": "1-800-676-2583",
+    "prior_auth_phone": "1-800-676-2583",
+    "payer_id": "BCBS1",
+    "ivr_hints": "Enter 10-digit NPI, then press 3 for Authorizations and Pre-certifications, followed by the 3-letter prefix of Member ID.",
+    "ivr_hint": "Enter NPI -> Press 3 (Auths) -> Alpha prefix",
+    "turnaround_hours": 24,
+    "portal_url": "https://www.availity.com"
+  },
+  {
+    "name": "Cigna",
+    "phone": "1-800-882-4462",
+    "prior_auth_phone": "1-800-882-4462",
+    "payer_id": "62308",
+    "ivr_hints": "Say 'Healthcare Professional', then say 'Prior Authorization', then enter Tax ID and Member ID.",
+    "ivr_hint": "Say 'Healthcare Professional' -> 'Authorization'",
+    "turnaround_hours": 24,
+    "portal_url": "https://cignaforhcp.cigna.com"
+  },
+  {
+    "name": "Humana",
+    "phone": "1-800-448-6262",
+    "prior_auth_phone": "1-800-448-6262",
+    "payer_id": "61101",
+    "ivr_hints": "Press 1 for Providers, then press 4 for Pre-Authorization / Pre-Certification, then enter Member ID.",
+    "ivr_hint": "Press 1 (Providers) -> 4 (Authorization)",
+    "turnaround_hours": 48,
+    "portal_url": "https://www.humana.com/provider"
+  },
+  {
+    "name": "Medicare (CMS)",
+    "phone": "1-800-633-4227",
+    "prior_auth_phone": "1-800-633-4227",
+    "payer_id": "00801",
+    "ivr_hints": "Say 'Provider Services', then 'Prior Authorization', then follow MAC contractor prompts.",
+    "ivr_hint": "Say 'Provider services' -> MAC contractor prompts",
+    "turnaround_hours": 72,
+    "portal_url": "https://www.cms.gov"
+  },
+  {
+    "name": "Medicaid (State Plan)",
+    "phone": "1-800-555-0199",
+    "prior_auth_phone": "1-800-555-0199",
+    "payer_id": "MCD01",
+    "ivr_hints": "Follow state-specific prompts for medical provider authorizations, then enter Billing NPI.",
+    "ivr_hint": "State Provider Auth -> Billing NPI",
+    "turnaround_hours": 72,
+    "portal_url": "https://www.medicaid.gov"
+  },
+  {
+    "name": "Kaiser Permanente",
+    "phone": "1-800-390-3510",
+    "prior_auth_phone": "1-800-390-3510",
+    "payer_id": "94042",
+    "ivr_hints": "Press 3 for External Referral and Prior Authorization department.",
+    "ivr_hint": "Press 3 (External Referrals & Prior Auth)",
+    "turnaround_hours": 24,
+    "portal_url": "https://providers.kaiserpermanente.org"
+  },
+  {
+    "name": "Molina Healthcare",
+    "phone": "1-888-562-5442",
+    "prior_auth_phone": "1-888-562-5442",
+    "payer_id": "38334",
+    "ivr_hints": "Press 2 for Prior Authorization, enter 10-digit NPI followed by pound (#).",
+    "ivr_hint": "Press 2 (Prior Auth) -> Enter NPI #",
+    "turnaround_hours": 48,
+    "portal_url": "https://provider.molinahealthcare.com"
+  }
+]

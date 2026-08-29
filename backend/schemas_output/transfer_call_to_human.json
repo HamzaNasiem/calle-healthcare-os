@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "function": {
+    "name": "transfer_call_to_human",
+    "description": "Transfers the ongoing call to a human receptionist or staff member.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "default": "unknown",
+          "description": "The reason for the transfer (e.g., 'billing', 'medical_emergency', 'complex_question')",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": []
+    }
+  }
+}

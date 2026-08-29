@@ -1,0 +1,3 @@
+-- Bytelytic Clinic OS - Simulated DB Backup
+-- Timestamp: 20260628_070000
+-- Warning: pg_dump utility was not found on PATH. Simulated fallback written.

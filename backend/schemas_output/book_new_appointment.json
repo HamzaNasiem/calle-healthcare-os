@@ -1,0 +1,51 @@
+{
+  "type": "function",
+  "function": {
+    "name": "book_new_appointment",
+    "description": "Books a new appointment for the patient and securely logs their details.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "patient_name": {
+          "default": "Unknown Patient",
+          "description": "The full name of the patient.",
+          "title": "Patient Name",
+          "type": "string"
+        },
+        "phone": {
+          "description": "The 10-digit phone number of the patient.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "dob": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The date of birth in YYYY-MM-DD format.",
+          "title": "Dob"
+        },
+        "slot_id": {
+          "description": "The specific slot ID provided by the check_calendar_availability tool.",
+          "title": "Slot Id",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "The reason for the visit or any additional notes.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone",
+        "slot_id"
+      ]
+    }
+  }
+}

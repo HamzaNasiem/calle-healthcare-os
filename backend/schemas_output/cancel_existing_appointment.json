@@ -1,0 +1,38 @@
+{
+  "type": "function",
+  "function": {
+    "name": "cancel_existing_appointment",
+    "description": "Cancels an existing appointment after verifying the patient's identity.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The patient's phone number for verification.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "dob": {
+          "description": "The patient's date of birth in YYYY-MM-DD format for verification.",
+          "title": "Dob",
+          "type": "string"
+        },
+        "appointment_date": {
+          "description": "The date of the appointment they wish to cancel, in YYYY-MM-DD format.",
+          "title": "Appointment Date",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "description": "The reason for cancelling the appointment.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone",
+        "dob",
+        "appointment_date"
+      ]
+    }
+  }
+}

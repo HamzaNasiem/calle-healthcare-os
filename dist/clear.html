@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Clearing Cache...</title>
+  <style>
+    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f7faf9; }
+    .box { text-align: center; }
+    h2 { color: #1a3a2e; }
+    p { color: #3d4946; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Clearing session cache...</h2>
+    <p>Redirecting to login in 1 second...</p>
+  </div>
+  <script>
+    // Clear all browser storage
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Unregister all service workers
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let reg of registrations) { reg.unregister(); }
+      });
+    }
+    
+    // Clear all caches
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (let name of names) { caches.delete(name); }
+      });
+    }
+    
+    setTimeout(function() {
+      window.location.replace('http://localhost:5173/login?t=' + Date.now());
+    }, 1000);
+  </script>
+</body>
+</html>

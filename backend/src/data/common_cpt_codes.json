@@ -1,0 +1,142 @@
+[
+  {
+    "code": "70551",
+    "description": "MRI Brain without dye/contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Chronic intractable headaches, neurological deficits, suspected mass"
+  },
+  {
+    "code": "70553",
+    "description": "MRI Brain with and without contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Tumor evaluation, multiple sclerosis plaque surveillance, acoustic neuroma"
+  },
+  {
+    "code": "72148",
+    "description": "MRI Lumbar Spine without dye/contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Radiculopathy, 6+ weeks conservative therapy failed, disc herniation"
+  },
+  {
+    "code": "73221",
+    "description": "MRI Joint Upper Extremity (Shoulder/Elbow/Wrist)",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Rotator cuff tear, labral pathology, ligamentous instability"
+  },
+  {
+    "code": "73721",
+    "description": "MRI Joint Lower Extremity (Knee/Hip/Ankle)",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Meniscal tear, ACL/PCL ligament rupture, avascular necrosis"
+  },
+  {
+    "code": "70450",
+    "description": "CT Head/Brain without contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Acute trauma, intracranial hemorrhage rule-out, acute stroke workup"
+  },
+  {
+    "code": "71250",
+    "description": "CT Chest without dye/contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Pulmonary nodule follow-up, interstitial lung disease, chronic cough"
+  },
+  {
+    "code": "74176",
+    "description": "CT Abdomen and Pelvis with contrast",
+    "category": "Radiology & Advanced Imaging",
+    "requires_pa": true,
+    "typical_indications": "Abdominal pain, diverticulitis, oncologic staging"
+  },
+  {
+    "code": "93306",
+    "description": "Echocardiogram complete transthoracic with Doppler",
+    "category": "Cardiology",
+    "requires_pa": true,
+    "typical_indications": "Heart failure, valvular heart disease, cardiomyopathy, arrhythmia"
+  },
+  {
+    "code": "93458",
+    "description": "Left Heart Catheterization with Coronary Angiography",
+    "category": "Cardiology",
+    "requires_pa": true,
+    "typical_indications": "Unstable angina, abnormal stress test, ischemic heart disease"
+  },
+  {
+    "code": "45378",
+    "description": "Diagnostic Colonoscopy with examination",
+    "category": "Gastroenterology",
+    "requires_pa": true,
+    "typical_indications": "Rectal bleeding, abnormal FIT test, surveillance in high-risk patients"
+  },
+  {
+    "code": "43239",
+    "description": "Upper GI Endoscopy (EGD) with biopsy",
+    "category": "Gastroenterology",
+    "requires_pa": true,
+    "typical_indications": "Refractory GERD, dysphagia, epigastric pain, suspected Barrett's"
+  },
+  {
+    "code": "27447",
+    "description": "Total Knee Arthroplasty (Knee Replacement)",
+    "category": "Orthopedic Surgery",
+    "requires_pa": true,
+    "typical_indications": "Severe end-stage osteoarthritis after conservative measures fail"
+  },
+  {
+    "code": "27130",
+    "description": "Total Hip Arthroplasty (Hip Replacement)",
+    "category": "Orthopedic Surgery",
+    "requires_pa": true,
+    "typical_indications": "Severe degenerative joint disease of hip, failed non-operative treatment"
+  },
+  {
+    "code": "29881",
+    "description": "Knee Arthroscopy with Meniscectomy",
+    "category": "Orthopedic Surgery",
+    "requires_pa": true,
+    "typical_indications": "Symptomatic locked knee, mechanical symptoms, MRI-confirmed meniscal tear"
+  },
+  {
+    "code": "47562",
+    "description": "Laparoscopic Cholecystectomy (Gallbladder Removal)",
+    "category": "General Surgery",
+    "requires_pa": true,
+    "typical_indications": "Symptomatic cholelithiasis, biliary colic, chronic cholecystitis"
+  },
+  {
+    "code": "49505",
+    "description": "Inguinal Hernia Repair, initial, reducible",
+    "category": "General Surgery",
+    "requires_pa": true,
+    "typical_indications": "Symptomatic inguinal hernia causing pain or limiting physical activity"
+  },
+  {
+    "code": "66984",
+    "description": "Cataract Surgery with intraocular lens prosthesis",
+    "category": "Ophthalmology",
+    "requires_pa": true,
+    "typical_indications": "Visually significant cataract impairing activities of daily living"
+  },
+  {
+    "code": "99214",
+    "description": "Office/Outpatient Visit, established patient, Level 4 (Moderate-High MDM)",
+    "category": "Evaluation & Management",
+    "requires_pa": false,
+    "typical_indications": "Multi-condition clinical management, medication reconciliation"
+  },
+  {
+    "code": "99215",
+    "description": "Office/Outpatient Visit, established patient, Level 5 (High Complexity MDM)",
+    "category": "Evaluation & Management",
+    "requires_pa": false,
+    "typical_indications": "Severe acute exacerbation, highly complex multi-organ disease"
+  }
+]

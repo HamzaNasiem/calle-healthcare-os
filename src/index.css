@@ -1,0 +1,221 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-surface text-on-surface font-sans text-sm font-normal;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1 {
+    @apply text-xl sm:text-2xl font-bold tracking-tight text-on-surface;
+  }
+
+  h2 {
+    @apply text-lg sm:text-xl font-bold tracking-tight text-on-surface;
+  }
+
+  h3 {
+    @apply text-base font-bold tracking-tight text-on-surface;
+  }
+
+  h4 {
+    @apply text-sm font-bold text-on-surface;
+  }
+}
+
+@layer components {
+  /* ── Buttons ────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-[0.5rem] font-semibold text-sm transition-all duration-200;
+    background: linear-gradient(135deg, #396a00 0%, #4d8a00 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(57, 106, 0, 0.25);
+  }
+  .btn-primary:hover {
+    filter: saturate(1.15) brightness(1.05);
+    box-shadow: 0 4px 16px rgba(57, 106, 0, 0.35);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+  
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-[0.5rem] font-semibold text-sm text-on-surface-variant transition-all duration-200;
+    background: transparent;
+    border: 1.5px solid rgba(111, 121, 117, 0.2);
+  }
+  .btn-secondary:hover {
+    @apply bg-surface-container text-on-surface;
+    border-color: rgba(111, 121, 117, 0.35);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-[0.5rem] font-medium text-sm text-on-surface-variant transition-all duration-150 hover:bg-surface-container hover:text-on-surface;
+  }
+
+  /* ── Cards ──────────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface-container-lowest rounded-[0.75rem];
+    box-shadow: 0px 10px 30px rgba(24, 28, 28, 0.06);
+  }
+  .card-flat {
+    @apply bg-surface-container-lowest rounded-[0.75rem];
+  }
+  .card-elevated {
+    @apply bg-surface-container-lowest rounded-[0.75rem];
+    box-shadow: 0px 16px 40px rgba(24, 28, 28, 0.10);
+  }
+
+  /* ── Inputs ─────────────────────────────────────────────────── */
+  .input-field {
+    @apply w-full px-4 py-3 bg-surface-container-highest rounded-[0.75rem] outline-none text-on-surface text-sm placeholder-on-surface-variant/40 transition-all duration-200;
+    border-bottom: 2px solid transparent;
+  }
+  .input-field:focus {
+    border-bottom-color: #396a00;
+    background-color: #f0f4f2;
+  }
+
+  /* ── Typography Utility Components ────────────────────────────── */
+  .page-header-title {
+    @apply text-xl sm:text-2xl font-bold tracking-tight text-on-surface;
+  }
+  .page-header-sub {
+    @apply text-xs sm:text-sm text-on-surface-variant font-normal mt-1;
+  }
+  .card-header-title {
+    @apply text-sm sm:text-base font-bold text-on-surface tracking-tight;
+  }
+  .card-header-sub {
+    @apply text-xs text-on-surface-variant font-normal mt-0.5;
+  }
+  .metric-value-text {
+    @apply text-2xl sm:text-3xl font-bold text-on-surface tracking-tight leading-none;
+  }
+  .metric-label-text {
+    @apply text-[11px] font-bold uppercase tracking-wider text-on-surface-variant;
+  }
+
+  /* ── Labels / Overlines ─────────────────────────────────────── */
+  .overline {
+    @apply text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface-variant;
+  }
+  .section-label {
+    @apply text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface-variant;
+  }
+
+  /* ── Status Dots ────────────────────────────────────────────── */
+  .status-dot {
+    @apply inline-block w-1.5 h-1.5 rounded-full flex-shrink-0;
+  }
+
+  /* ── Tab Pills (segment style like images) ──────────────────── */
+  .tab-group {
+    @apply flex items-center gap-0.5 bg-surface-container rounded-[0.5rem] p-0.5 overflow-x-auto hidden-scrollbar max-w-full;
+  }
+  .tab-item {
+    @apply px-4 py-1.5 rounded-[0.375rem] text-sm font-semibold transition-all duration-150 text-on-surface-variant flex-shrink-0 whitespace-nowrap;
+  }
+  .tab-item.active {
+    @apply bg-surface-container-lowest text-on-surface;
+    box-shadow: 0px 2px 6px rgba(24, 28, 28, 0.08);
+  }
+  .tab-item:not(.active):hover {
+    @apply text-on-surface;
+  }
+
+  /* ── Table ──────────────────────────────────────────────────── */
+  .table-header-cell {
+    @apply px-5 py-3.5 text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface-variant bg-surface-container;
+    white-space: nowrap;
+  }
+  .table-row {
+    @apply transition-colors duration-100 border-b border-surface-container cursor-pointer;
+  }
+  .table-row:hover {
+    background-color: #f2f6f4;
+  }
+  .table-row.selected {
+    background-color: rgba(57, 106, 0, 0.04);
+    border-left: 3px solid #396a00;
+  }
+  .table-cell {
+    @apply px-5 py-4 text-sm text-on-surface;
+  }
+
+  /* ── sidebar nav item ───────────────────────────────────────── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-[0.625rem] transition-all duration-150 font-semibold text-sm;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .nav-item:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .nav-item.active {
+    background-color: rgba(127, 205, 77, 0.15);
+    color: #7FCD4D;
+    border-left: 3px solid #7FCD4D;
+    padding-left: calc(0.75rem - 3px);
+  }
+
+  /* ── Glassmorphism sidebar ──────────────────────────────────── */
+  .sidebar-glass {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}
+
+@layer utilities {
+  .hidden-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .hidden-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* thin scrollbar */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(24,28,28,0.12) transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(24,28,28,0.12);
+    border-radius: 20px;
+  }
+
+  /* clip text gradient */
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #396a00 0%, #7dbd42 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ghost border fallback */
+  .ghost-border {
+    outline: 1px solid rgba(190, 201, 196, 0.15);
+    outline-offset: 0;
+  }
+}

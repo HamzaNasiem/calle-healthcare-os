@@ -1,0 +1,58 @@
+{
+  "type": "function",
+  "function": {
+    "name": "check_calendar_availability",
+    "description": "Checks the clinic's calendar for available appointment slots based on patient preferences.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The date to check in YYYY-MM-DD format. If not provided, defaults to today.",
+          "title": "Date"
+        },
+        "time_preference": {
+          "default": "any",
+          "description": "Time preference: 'morning', 'afternoon', 'evening', or 'any'",
+          "title": "Time Preference",
+          "type": "string"
+        },
+        "provider_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The specific provider ID to check availability for. If not provided, checks any provider.",
+          "title": "Provider Id"
+        },
+        "service_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The type of service requested, e.g. 'consult', 'cleaning', 'surgery'",
+          "title": "Service Type"
+        }
+      },
+      "required": []
+    }
+  }
+}

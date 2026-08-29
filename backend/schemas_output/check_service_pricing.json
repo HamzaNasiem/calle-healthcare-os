@@ -1,0 +1,20 @@
+{
+  "type": "function",
+  "function": {
+    "name": "check_service_pricing",
+    "description": "Checks the price and duration of a specific service offered by the clinic.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "service_name": {
+          "description": "The name of the service the patient is asking about (e.g. 'consult', 'teeth whitening', 'botox')",
+          "title": "Service Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "service_name"
+      ]
+    }
+  }
+}

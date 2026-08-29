@@ -1,0 +1,20 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_clinic_faq",
+    "description": "Gets answers to frequently asked questions about the clinic.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "question_type": {
+          "description": "A short keyword describing the question category (e.g., 'parking', 'location', 'insurance', 'cancellation')",
+          "title": "Question Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_type"
+      ]
+    }
+  }
+}

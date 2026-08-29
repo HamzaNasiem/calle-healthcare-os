@@ -1,0 +1,5 @@
+Testing appointment types validation...
+Test 1 passed!
+Test 2 passed!
+Test 3 passed!
+ALL APPOINTMENT TYPES BACKEND TESTS PASSED SUCCESSFULLY!

@@ -1,0 +1,44 @@
+{
+  "type": "function",
+  "function": {
+    "name": "add_to_waitlist",
+    "description": "Adds a patient to the clinic's waitlist if their desired time slot is unavailable.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The patient's 10-digit phone number.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "patient_name": {
+          "default": "Unknown Patient",
+          "description": "The patient's full name.",
+          "title": "Patient Name",
+          "type": "string"
+        },
+        "preferred_day": {
+          "default": "any",
+          "description": "The preferred day of the week, e.g. 'Monday', 'Friday', or 'any'.",
+          "title": "Preferred Day",
+          "type": "string"
+        },
+        "preferred_time_range": {
+          "default": "any",
+          "description": "The preferred time of day: 'morning', 'afternoon', 'evening', or 'any'.",
+          "title": "Preferred Time Range",
+          "type": "string"
+        },
+        "service_type": {
+          "default": "",
+          "description": "The type of service requested.",
+          "title": "Service Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone"
+      ]
+    }
+  }
+}

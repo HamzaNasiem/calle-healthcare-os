@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "send_live_sms_link",
+    "description": "Sends an SMS to the patient with a link (e.g. intake form or directions) while they are on the phone.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The 10-digit phone number of the patient.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "link_type": {
+          "default": "intake_form",
+          "description": "Type of link to send. Usually 'intake_form', 'payment_url', 'address_map', or 'confirmation_page'",
+          "title": "Link Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone"
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "log_patient_symptoms",
+    "description": "Logs the patient's symptoms or clinical notes securely.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The 10-digit phone number of the patient.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "symptom_summary": {
+          "description": "A concise summary of the patient's symptoms.",
+          "title": "Symptom Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone",
+        "symptom_summary"
+      ]
+    }
+  }
+}

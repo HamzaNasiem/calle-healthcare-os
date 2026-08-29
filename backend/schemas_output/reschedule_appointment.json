@@ -1,0 +1,38 @@
+{
+  "type": "function",
+  "function": {
+    "name": "reschedule_appointment",
+    "description": "Reschedules an existing appointment to a new slot.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "phone": {
+          "description": "The patient's phone number for verification.",
+          "title": "Phone",
+          "type": "string"
+        },
+        "dob": {
+          "description": "The patient's date of birth in YYYY-MM-DD format for verification.",
+          "title": "Dob",
+          "type": "string"
+        },
+        "old_appointment_date": {
+          "description": "The date of the current appointment they wish to change, in YYYY-MM-DD format.",
+          "title": "Old Appointment Date",
+          "type": "string"
+        },
+        "new_slot_id": {
+          "description": "The new slot ID to move the appointment to.",
+          "title": "New Slot Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phone",
+        "dob",
+        "old_appointment_date",
+        "new_slot_id"
+      ]
+    }
+  }
+}
