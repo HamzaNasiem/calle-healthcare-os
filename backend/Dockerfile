@@ -2,7 +2,9 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000
+    PORT=8000 \
+    ENCRYPTION_MODE=local \
+    ENCRYPTION_KEY=hYggyNW+JO9cGaCKHoMMRrQsvnYFIUIYg+P08iF1UKA=
 
 WORKDIR /app
 
@@ -13,8 +15,8 @@ RUN pip install --no-cache-dir -U pip && pip install --no-cache-dir -r requireme
 # Copy backend source
 COPY . .
 
-# Expose port
+# Expose default port
 EXPOSE 8000
 
-# Start FastAPI server
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start FastAPI server on the port injected by Render ($PORT)
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
