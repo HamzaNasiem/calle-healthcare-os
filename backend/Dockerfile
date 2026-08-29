@@ -18,5 +18,5 @@ COPY . .
 # Expose default port
 EXPOSE 8000
 
-# Start FastAPI server on the port injected by Render ($PORT)
-CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Start FastAPI server via Gunicorn with UvicornWorker
+CMD ["sh", "-c", "gunicorn -w 1 -k uvicorn.workers.UvicornWorker src.main:app --bind 0.0.0.0:${PORT:-8000} --timeout 120"]
