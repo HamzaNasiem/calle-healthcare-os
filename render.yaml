@@ -7,7 +7,8 @@ services:
     branch: main
     rootDir: backend
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python run.py
+    startCommand: gunicorn -w 1 -k uvicorn.workers.UvicornWorker src.main:app
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0

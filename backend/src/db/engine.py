@@ -19,7 +19,7 @@ connect_args = {
     "prepared_statement_cache_size": 0,
     "prepared_statement_name_func": lambda: "",
 }
-if settings.DATABASE_SSL:
+if settings.DATABASE_SSL or ("127.0.0.1" not in str(settings.database_url) and "localhost" not in str(settings.database_url)):
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
