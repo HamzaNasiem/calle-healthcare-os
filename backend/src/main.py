@@ -161,8 +161,11 @@ app.add_middleware(PHIUrlGuardMiddleware)
 app.include_router(api_router)
 app.include_router(root_api_router)
 
-# Initialize Prometheus Exporter
-Instrumentator().instrument(app).expose(app)
+# Initialize Prometheus Exporter (optional APM)
+try:
+    Instrumentator().instrument(app).expose(app)
+except Exception as prom_err:
+    log.warning(f"[Prometheus] Warning: {prom_err}")
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
