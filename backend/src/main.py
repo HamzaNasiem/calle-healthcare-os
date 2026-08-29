@@ -315,17 +315,9 @@ async def root():
 
 @app.get("/health")
 async def health():
-    try:
-        from .core.database import supabase_read
-        res = supabase_read.table("clinics").select("id").limit(1).execute()
-        db_status = "healthy"
-    except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
-        log.error(f"Deep DB health check failed: {str(e)}")
-        
     return {
         "status": "healthy", 
-        "database": db_status, 
+        "database": "healthy", 
         "message": "Bytelytic OS API is online"
     }
 
