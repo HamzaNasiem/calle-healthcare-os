@@ -44,34 +44,23 @@ if settings.SENTRY_DSN:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ────────────────────────────────────────────────────────────────
-    try:
-        log.info(f"[Startup] SUPABASE_URL: {settings.SUPABASE_URL}")
-        log.info(f"[Startup] SUPABASE_SERVICE_KEY: ...{settings.SUPABASE_SERVICE_KEY[-10:]}")
-        log.info(f"[Startup] SUPABASE_ANON_KEY: ...{settings.SUPABASE_ANON_KEY[-10:]}")
-    except Exception as e:
-        log.warning(f"[Startup] Config log warning: {e}")
+    import asyncio
+    async def _start_scheduler_bg():
+        await asyncio.sleep(5)
+        try:
+            from .services.scheduler import start_scheduler
+            start_scheduler()
+            log.info("[Scheduler] APScheduler started — all background jobs active.")
+        except Exception as sched_err:
+            log.warning(f"[Scheduler] Background start warning: {sched_err}")
 
-    # ── Start Background Job Scheduler ─────────────────────────────────────────
-    # Runs: 24h reminders, CALL-E confirmation calls, recording purge, waitlist expiry
-    try:
-        from .services.scheduler import start_scheduler
-        start_scheduler()
-        log.info("[Scheduler] APScheduler started — all background jobs active.")
-    except ImportError:
-        log.warning("[Scheduler] scheduler.py not found — background jobs will NOT run.")
-    except Exception as sched_err:
-        log.error(f"[Scheduler] Failed to start: {sched_err}")
-
-
+    asyncio.create_task(_start_scheduler_bg())
     yield
 
-    # ── Shutdown ───────────────────────────────────────────────────────────────
     try:
         from .services.scheduler import scheduler
         if scheduler.running:
             scheduler.shutdown(wait=False)
-            log.info("[Scheduler] APScheduler stopped cleanly.")
     except Exception:
         pass
 
