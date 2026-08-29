@@ -91,21 +91,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS configuration
-if settings.NODE_ENV == "production":
-    origins = [
-        "https://dashboard-two-jade-54.vercel.app",  # Production Vercel frontend
-    ]
-else:
-    origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://dashboard-two-jade-54.vercel.app",  # Production Vercel frontend
-    ]
-
-if settings.DASHBOARD_URL:
-    origins.append(settings.DASHBOARD_URL)
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
