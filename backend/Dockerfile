@@ -19,5 +19,5 @@ COPY . .
 # Expose default port
 EXPOSE 8000
 
-# Start FastAPI server
-CMD ["sh", "-c", "python -m uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Start FastAPI server via server.py
+CMD ["python", "server.py"]
