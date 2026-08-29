@@ -14,7 +14,7 @@ _pool_lock = threading.Lock()
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
-    """Lazily initialize and return the shared connection pool."""
+    """Lazily initialize and return the shared connection pool with auto SSL and fallback."""
     global _pool
     if _pool is not None:
         return _pool
@@ -24,18 +24,35 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
         db_url = (
             os.environ.get("DATABASE_URL")
             or os.environ.get("SUPABASE_DATABASE_URL")
-            or "postgresql://postgres:postgres@127.0.0.1:5432/bytelytic_clinic_db"
+            or "postgresql://calle_user:L9zYPT9GzEEcPOV2grP3TtDrX9fXmKwV@dpg-da9dirm7bikc7390tqrg-a.oregon-postgres.render.com:5432/bytelytic_clinic_db?sslmode=require"
         )
         if db_url:
             db_url = db_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql+psycopg2://", "postgresql://")
+            if "sslmode" not in db_url and "127.0.0.1" not in db_url and "localhost" not in db_url:
+                db_url += ("&" if "?" in db_url else "?") + "sslmode=require"
 
-        _pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=20,
-            dsn=db_url,
-            connect_timeout=5,
-        )
-        return _pool
+        try:
+            _pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=db_url,
+                connect_timeout=5,
+            )
+            return _pool
+        except Exception as e:
+            print(f"[DB Warning] Could not connect to pool with {db_url[:25]}... ({e})")
+            try:
+                fallback_url = "postgresql://calle_user:L9zYPT9GzEEcPOV2grP3TtDrX9fXmKwV@dpg-da9dirm7bikc7390tqrg-a.oregon-postgres.render.com:5432/bytelytic_clinic_db?sslmode=require"
+                _pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=1,
+                    maxconn=5,
+                    dsn=fallback_url,
+                    connect_timeout=5,
+                )
+                return _pool
+            except Exception as e2:
+                print(f"[DB Critical] Fallback database pool failed: {e2}")
+                return None
 
 def _close_pool():
     """Gracefully close the connection pool on shutdown."""
