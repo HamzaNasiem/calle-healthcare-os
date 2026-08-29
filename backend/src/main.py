@@ -117,10 +117,7 @@ app.add_middleware(
 
 
 # Allowed Hosts for Security
-allowed_hosts = ["localhost", "127.0.0.1", "testserver", "clinic-os-production.up.railway.app", "*.railway.app", "*.up.railway.app"]
-if settings.DASHBOARD_URL:
-    clean_host = settings.DASHBOARD_URL.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
-    allowed_hosts.append(clean_host)
+allowed_hosts = ["*"]
 
 app.add_middleware(
     TrustedHostMiddleware,
