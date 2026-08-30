@@ -454,18 +454,32 @@ const CallDetailDrawer = ({ call, onClose }) => {
       sentiment: t.sentiment,
     }));
   } else if (call.transcript) {
-    const rawLines = call.transcript.split("\n").map((l) => l.trim()).filter(Boolean);
-    turns = rawLines.map((line, idx) => {
-      const isAgent = line.toLowerCase().startsWith("agent:") || line.toLowerCase().startsWith("receptionist:");
-      const isStaff = line.toLowerCase().startsWith("doctor:") || line.toLowerCase().startsWith("staff:") || line.toLowerCase().startsWith("representative:");
-      const displayText = line.replace(/^(agent|receptionist|user|patient|caller|doctor|staff|representative):\s*/i, "");
-      return {
-        speaker: isAgent ? "AI Receptionist" : isStaff ? "Clinic Representative" : patientName.split(" ")[0],
-        role: isAgent ? "agent" : isStaff ? "representative" : "user",
-        text: displayText || line,
-        timestamp: `00:${String(idx * 8).padStart(2, "0")}`,
-      };
-    });
+    try {
+      const parsed = JSON.parse(call.transcript);
+      if (Array.isArray(parsed)) {
+        turns = parsed.map((t, idx) => ({
+          speaker: t.speaker === "bot" || t.speaker === "agent" ? "AI Receptionist" : t.speaker || patientName.split(" ")[0],
+          role: t.speaker === "bot" || t.speaker === "agent" ? "agent" : "user",
+          text: t.text || t.message || "",
+          timestamp: t.timestamp !== undefined ? `00:${String(t.timestamp).padStart(2, "0")}` : `00:${String(idx * 12).padStart(2, "0")}`,
+        }));
+      } else {
+        throw new Error("Not an array");
+      }
+    } catch (e) {
+      const rawLines = call.transcript.split("\n").map((l) => l.trim()).filter(Boolean);
+      turns = rawLines.map((line, idx) => {
+        const isAgent = line.toLowerCase().startsWith("agent:") || line.toLowerCase().startsWith("receptionist:") || line.toLowerCase().startsWith("bot:");
+        const isStaff = line.toLowerCase().startsWith("doctor:") || line.toLowerCase().startsWith("staff:") || line.toLowerCase().startsWith("representative:");
+        const displayText = line.replace(/^(agent|receptionist|bot|user|patient|caller|doctor|staff|representative):\s*/i, "");
+        return {
+          speaker: isAgent ? "AI Receptionist" : isStaff ? "Clinic Representative" : patientName.split(" ")[0],
+          role: isAgent ? "agent" : isStaff ? "representative" : "user",
+          text: displayText || line,
+          timestamp: `00:${String(idx * 8).padStart(2, "0")}`,
+        };
+      });
+    }
   }
 
   const filteredTurns = transcriptSearch

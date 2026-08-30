@@ -32,6 +32,7 @@ import {
   Search,
   ArrowUpRight,
   Layers,
+  User,
 } from "lucide-react";
 import {
   BarChart,
@@ -1408,8 +1409,71 @@ const Dashboard = () => {
               </p>
             </div>
 
-            <div className="max-h-64 overflow-y-auto bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-3 text-xs leading-relaxed text-on-surface space-y-2 whitespace-pre-wrap thin-scrollbar">
-              {selectedCallTranscript.transcript || "No raw transcript text available for this call."}
+            <div className="max-h-64 overflow-y-auto bg-surface-container-lowest border border-outline-variant/30 rounded-xl p-4 text-xs leading-relaxed text-on-surface space-y-4 thin-scrollbar">
+              {(() => {
+                const transcriptText = selectedCallTranscript.transcript;
+                if (!transcriptText) return <p className="text-on-surface-variant text-center py-4">No transcript text available for this call.</p>;
+                try {
+                  const parsed = JSON.parse(transcriptText);
+                  if (Array.isArray(parsed)) {
+                    return (
+                      <div className="space-y-3.5">
+                        {parsed.map((turn, i) => {
+                          const isAgent = turn.speaker === "bot" || turn.speaker === "agent";
+                          return (
+                            <div key={i} className={`flex gap-2.5 ${isAgent ? "flex-row" : "flex-row-reverse"}`}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 shadow-xs ${isAgent ? "bg-primary text-on-primary" : "bg-surface-container-highest text-on-surface"}`}>
+                                {isAgent ? <Bot className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+                              </div>
+                              <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-xs text-xs leading-relaxed ${isAgent ? "bg-surface-container/70 text-on-surface rounded-tl-none border border-surface-container-high/40" : "bg-primary/10 text-on-surface rounded-tr-none border border-primary/20"}`}>
+                                <div className="flex items-center justify-between gap-3 mb-1">
+                                  <span className={`font-bold text-[9px] uppercase tracking-wider ${isAgent ? "text-primary" : "text-on-surface-variant"}`}>
+                                    {isAgent ? "AI Receptionist" : "Patient"}
+                                  </span>
+                                  {turn.timestamp !== undefined && (
+                                    <span className="text-[9px] text-on-surface-variant/60 font-mono">
+                                      00:{String(turn.timestamp).padStart(2, "0")}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-on-surface font-normal">{turn.text}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                } catch (e) {
+                  const lines = transcriptText.split("\n").map(l => l.trim()).filter(Boolean);
+                  if (lines.length > 0) {
+                    return (
+                      <div className="space-y-3.5">
+                        {lines.map((line, i) => {
+                          const isAgent = line.toLowerCase().startsWith("agent:") || line.toLowerCase().startsWith("receptionist:") || line.toLowerCase().startsWith("bot:");
+                          const displayText = line.replace(/^(agent|receptionist|bot|user|patient|caller|doctor|staff|representative):\s*/i, "");
+                          return (
+                            <div key={i} className={`flex gap-2.5 ${isAgent ? "flex-row" : "flex-row-reverse"}`}>
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5 shadow-xs ${isAgent ? "bg-primary text-on-primary" : "bg-surface-container-highest text-on-surface"}`}>
+                                {isAgent ? <Bot className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+                              </div>
+                              <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 shadow-xs text-xs leading-relaxed ${isAgent ? "bg-surface-container/70 text-on-surface rounded-tl-none border border-surface-container-high/40" : "bg-primary/10 text-on-surface rounded-tr-none border border-primary/20"}`}>
+                                <div className="flex items-center justify-between gap-3 mb-1">
+                                  <span className={`font-bold text-[9px] uppercase tracking-wider ${isAgent ? "text-primary" : "text-on-surface-variant"}`}>
+                                    {isAgent ? "AI Receptionist" : "Patient"}
+                                  </span>
+                                </div>
+                                <p className="text-on-surface font-normal">{displayText || line}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                }
+                return <p className="whitespace-pre-wrap">{transcriptText}</p>;
+              })()}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-outline-variant/30">
