@@ -234,6 +234,7 @@ const Dashboard = () => {
   const [chartRange, setChartRange] = useState(7);
   const [chartData, setChartData] = useState([]);
   const [upNext, setUpNext] = useState([]);
+  const [appointments, setAppointments] = useState([]);
   const [recentCalls, setRecentCalls] = useState([]);
   const [callFilter, setCallFilter] = useState("all"); // 'all' | 'booking' | 'confirmation' | 'prior_auth'
   const [clinic, setClinic] = useState(null);
