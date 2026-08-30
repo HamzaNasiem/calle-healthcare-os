@@ -452,6 +452,40 @@ class LocalPostgresClient:
     def __init__(self):
         self.auth = LocalAuth()
 
+    def execute(self, query: str, params: tuple = None):
+        """Execute a raw SQL query directly on the connection pool."""
+        pool = _get_pool()
+        if not pool:
+            return []
+        conn = pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, params)
+                if query.strip().upper().startswith("SELECT") or "RETURNING" in query.upper():
+                    rows = cur.fetchall()
+                    cleaned_rows = []
+                    for row in rows:
+                        row_dict = dict(row)
+                        for k, v in list(row_dict.items()):
+                            if isinstance(v, (datetime.datetime, datetime.date)):
+                                row_dict[k] = v.isoformat()
+                            elif hasattr(v, "__str__") and type(v).__name__ == "UUID":
+                                row_dict[k] = str(v)
+                        cleaned_rows.append(row_dict)
+                    return cleaned_rows
+                else:
+                    conn.commit()
+                    return []
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            print(f"[LocalPostgresClient Raw Query Error] {e}")
+            raise e
+        finally:
+            pool.putconn(conn)
+
     def table(self, table_name):
         return LocalPostgresTableQuery(table_name)
 
