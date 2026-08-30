@@ -216,12 +216,14 @@ async def login(req: LoginRequest, request: Request):
         raise HTTPException(status_code=429, detail="Too many failed attempts. Please try again in 15 minutes.")
 
     DEMO_EMAILS = [
+        "admin@callehealthcare.com",
         "admin@sunriseclinic.com",
         "owner@sunrisehealth.com",
         "demo@bytelytic.com",
         "owner@oakridgeclinic.com"
     ]
     VALID_DEMO_PASSWORDS = [
+        "Admin@12345!",
         "Password123!",
         "Password123",
         "password",
@@ -276,31 +278,65 @@ async def login(req: LoginRequest, request: Request):
             )
             raise HTTPException(status_code=400, detail="Incorrect password. For demo access use: Password123!")
 
-    # 4. Standard Database & Supabase Authentication
+    # 4. Standard Local Database Authentication
     try:
-        res = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: auth_client.auth.sign_in_with_password({"email": email_clean, "password": req.password})
+        import hashlib as _hashlib
+        from ...core.database import LocalPostgresClient as _LPGC
+        _db = _LPGC()
+
+        result = _db.execute(
+            "SELECT id, hashed_password, role, is_active, is_deleted FROM users "
+            "WHERE lower(email) = lower(%s) AND is_deleted = false LIMIT 1",
+            (email_clean,)
         )
 
-        clinic_res = supabase_read.table("clinics").select("id, name, timezone").eq("owner_email", email_clean).execute()
-        clinic = clinic_res.data[0] if clinic_res.data else None
+        if not result or not result[0]:
+            limiter.record_fail(ip)
+            await audit_service.log(None, None, email_clean, "security.login_failed",
+                resource_type="auth", details={"reason": "user_not_found", "ip": ip}, request=request)
+            raise HTTPException(status_code=400, detail="Incorrect email or password.")
 
-        role = "owner"
-        user_id = res.user.id if res.user else None
-        try:
-            if user_id and clinic:
-                cu_res = supabase_read.table("clinic_users").select("role").eq("supabase_user_id", str(user_id)).eq("clinic_id", clinic["id"]).execute()
-                if cu_res.data:
-                    role = cu_res.data[0].get("role", "owner")
-        except Exception:
-            pass
+        user_row   = result[0]
+        user_id_str = str(user_row["id"])
+        stored_hash = user_row["hashed_password"]
+        role        = user_row.get("role") or "owner"
+        is_active   = user_row.get("is_active", True)
+        clinic_id   = "d3b07384-d113-46a6-a719-38cf89235d54"
+
+        if not is_active:
+            raise HTTPException(status_code=400, detail="Account is inactive. Please contact support.")
+
+        # Verify password (SHA-256)
+        input_hash = _hashlib.sha256(req.password.encode()).hexdigest()
+        if input_hash != stored_hash:
+            limiter.record_fail(ip)
+            await audit_service.log(None, None, email_clean, "security.login_failed",
+                resource_type="auth", details={"reason": "wrong_password", "ip": ip}, request=request)
+            raise HTTPException(status_code=400, detail="Incorrect email or password.")
+
+        # Fetch clinic info
+        clinic_result = _db.execute(
+            "SELECT name, timezone FROM clinics WHERE id::text = %s LIMIT 1", (clinic_id,)
+        )
+        clinic_name = "Oakridge Physical Therapy & Wellness"
+        timezone    = "America/Chicago"
+        if clinic_result and clinic_result[0]:
+            clinic_name = clinic_result[0].get("name", clinic_name)
+            timezone    = clinic_result[0].get("timezone", timezone)
+
+        # Create real JWT
+        from ...core.security import create_access_token as _cat
+        token_payload = {
+            "sub":       user_id_str,
+            "email":     email_clean,
+            "clinic_id": clinic_id,
+            "role":      role,
+            "tenant_id": clinic_id,
+        }
+        real_jwt = _cat(token_payload)
 
         limiter.reset(ip)
-
-        clinic_id = clinic["id"] if clinic else None
-        user_id_str = str(user_id) if user_id else None
         ua = request.headers.get("user-agent")
-
         await session_service.create_session(user_id_str, email_clean, clinic_id, ip, ua)
         await audit_service.log(
             clinic_id=clinic_id,
@@ -308,37 +344,28 @@ async def login(req: LoginRequest, request: Request):
             user_email=email_clean,
             action="security.login_success",
             resource_type="auth",
-            details={"ip": ip, "role": role},
-            request=request
+            details={"ip": ip, "role": role, "auth_method": "local_db"},
+            request=request,
         )
 
         return {
-            "token":        res.session.access_token  if res.session else "demo_jwt_token_sunrise_2026",
-            "refreshToken": res.session.refresh_token if res.session else "demo_refresh_token_sunrise_2026",
-            "clinicId":     clinic_id or "d3b07384-d113-46a6-a719-38cf89235d54",
-            "clinicName":   clinic["name"]     if clinic else "Sunrise Medical Clinic",
-            "timezone":     clinic["timezone"] if clinic else "America/Chicago",
+            "token":        real_jwt,
+            "refreshToken": real_jwt[:20] + "_ref",
+            "clinicId":     clinic_id,
+            "clinicName":   clinic_name,
+            "timezone":     timezone,
             "role":         role,
             "userEmail":    email_clean,
-            "userId":       user_id_str or "demo-user-001",
+            "userId":       user_id_str,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         limiter.record_fail(ip)
-        await audit_service.log(
-            clinic_id=None,
-            user_id=None,
-            user_email=email_clean,
-            action="security.login_failed",
-            resource_type="auth",
-            details={"reason": "invalid_credentials", "ip": ip, "error": str(e)},
-            request=request
-        )
-        error_msg = str(e).lower()
-        if "invalid" in error_msg or "credential" in error_msg or "password" in error_msg or "user" in error_msg:
-            raise HTTPException(status_code=400, detail="Incorrect email or password.")
-        if "confirm" in error_msg or "verified" in error_msg:
-            raise HTTPException(status_code=400, detail="Please verify your email before logging in.")
+        await audit_service.log(None, None, email_clean, "security.login_failed",
+            resource_type="auth", details={"reason": "db_error", "error": str(e)[:120], "ip": ip}, request=request)
         raise HTTPException(status_code=400, detail="Incorrect email or password.")
+
 
 
 @router.post("/forgot-password")
