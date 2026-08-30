@@ -3,7 +3,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 import re
+import logging
 from datetime import datetime, timezone, timedelta
+
+log = logging.getLogger("security")
 
 from .config import settings
 from .database import auth_client, supabase
@@ -184,6 +187,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         response = auth_client.auth.get_user(token)
         if response and response.user:
             return response.user
+    except HTTPException:
+        raise
     except Exception as e:
         log.warning(f"[security.get_current_user] Supabase get_user check failed ({e}), attempting local payload extraction...")
 
