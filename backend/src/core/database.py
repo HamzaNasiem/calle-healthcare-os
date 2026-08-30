@@ -425,9 +425,20 @@ class LocalAuth:
         raise Exception("Invalid login credentials")
         
     def get_user(self, token: str = None):
-        return LocalAuthResponse(
-            user=LocalAuthUser(user_id="demo-user-001", email="admin@sunriseclinic.com")
-        )
+        if not token:
+            raise Exception("Missing access token")
+        from .security import decode_access_token
+        try:
+            payload = decode_access_token(token)
+            uid = payload.get("sub") or payload.get("user_id")
+            em = payload.get("email")
+            if not uid:
+                raise Exception("Invalid token: missing subject")
+            return LocalAuthResponse(
+                user=LocalAuthUser(user_id=str(uid), email=em or "user@clinic.local")
+            )
+        except Exception as e:
+            raise Exception(f"Invalid access token: {e}")
         
     def reset_password_email(self, email: str, options: dict = None):
         return {"success": True}
