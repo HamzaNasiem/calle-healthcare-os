@@ -323,10 +323,8 @@ const Dashboard = () => {
       setCacheItem("dashboard:appointments", apptList);
 
       const callsList = callsRes.data?.data || [];
-      if (callsList.length > 0) {
-        setRecentCalls(callsList);
-        setCacheItem("dashboard:recentCalls", callsList);
-      }
+      setRecentCalls(callsList);
+      setCacheItem("dashboard:recentCalls", callsList);
 
       // Process Up Next Appointments for Today
       const now = new Date();
