@@ -187,24 +187,28 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except Exception as e:
         log.warning(f"[security.get_current_user] Supabase get_user check failed ({e}), attempting local payload extraction...")
 
-    # Fallback: Parse local JWT payload if Supabase API is unreachable
+    # Fallback: Cryptographically verify signed JWT access token
     try:
-        parts = token.split(".")
-        if len(parts) == 3:
-            payload_b64 = parts[1] + "=" * ((4 - len(parts[1]) % 4) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode('utf-8'))
-            user_id = payload.get("sub") or payload.get("user_id") or "demo-user-001"
-            email = payload.get("email") or "admin@sunriseclinic.com"
-            
-            class FallbackUser:
-                pass
-            u = FallbackUser()
-            u.id = user_id
-            u.email = email
-            u.user_metadata = payload.get("user_metadata", {})
-            return u
-    except Exception:
-        pass
+        payload = decode_access_token(token)
+        user_id = payload.get("sub") or payload.get("user_id")
+        email = payload.get("email")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing subject"
+            )
+        
+        class LocalUser:
+            pass
+        u = LocalUser()
+        u.id = user_id
+        u.email = email or "user@clinic.local"
+        u.user_metadata = payload.get("user_metadata", {})
+        return u
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning(f"[security.get_current_user] JWT signature verification failed: {e}")
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
