@@ -387,24 +387,24 @@ export const PatientDetailsModal = ({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-surface-container">
                       <p className="overline text-on-surface-variant mb-1">Total Visits</p>
-                      <p className="text-xl font-bold text-on-surface">{patient.total_visits || patient.visit_count || 0}</p>
+                      <p className="text-xl font-bold text-on-surface">{detail?.patient?.total_visits ?? patient.total_visits ?? patient.visit_count ?? 0}</p>
                     </div>
                     <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-surface-container">
                       <p className="overline text-on-surface-variant mb-1">Last Visit</p>
                       <p className="text-sm font-semibold text-on-surface mt-1">
-                        {patient.last_visit_date ? format(parseISO(patient.last_visit_date), "MMM d, yyyy") : "None"}
+                        {(detail?.patient?.last_visit_date || patient.last_visit_date) ? format(parseISO(detail?.patient?.last_visit_date || patient.last_visit_date), "MMM d, yyyy") : "None"}
                       </p>
                     </div>
                     <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-surface-container">
                       <p className="overline text-on-surface-variant mb-1">Lifetime Value</p>
                       <p className="text-xl font-bold text-primary">
-                        ${(((patient.total_revenue_cents || patient.total_revenue_generated || 0) / 100)).toFixed(0)}
+                        ${Number(detail?.patient?.total_revenue_generated ?? patient?.total_revenue_generated ?? (patient?.total_revenue_cents ? patient.total_revenue_cents / 100 : 0)).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </p>
                     </div>
                     <div className="bg-surface-container-lowest p-3.5 rounded-xl border border-surface-container">
                       <p className="overline text-on-surface-variant mb-1">No-Shows</p>
-                      <p className={`text-xl font-bold ${(patient.no_show_count || 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                        {patient.no_show_count || 0}
+                      <p className={`text-xl font-bold ${Number(detail?.patient?.no_show_count ?? patient.no_show_count ?? 0) > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        {detail?.patient?.no_show_count ?? patient.no_show_count ?? 0}
                       </p>
                     </div>
                   </div>
