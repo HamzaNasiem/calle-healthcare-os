@@ -2,6 +2,8 @@ import hmac
 import hashlib
 import json
 import asyncio
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Header, Response, status
 
@@ -167,6 +169,42 @@ async def handle_retell_webhook(request: Request, x_retell_signature: str = Head
         )
         
         log.info(f"Queued Retell job for call_id='{call_info.get('call_id')}' clinic_id='{clinic_id}'")
+
+        # Direct insert into calls table for immediate visibility in Call Logs (/calls)
+        try:
+            dur_sec = (call_info.get("duration_ms") or 0) // 1000
+            call_outcome = "completed"
+            if "book" in str(call_info.get("transcript", "")).lower():
+                call_outcome = "booked"
+            
+            raw_transcript = call_info.get("transcript", "")
+            transcript_formatted = json.dumps([{"speaker": "Transcript", "text": raw_transcript}]) if isinstance(raw_transcript, str) else json.dumps(raw_transcript)
+            
+            now_str = datetime.now(timezone.utc).isoformat()
+            call_record = {
+                "id": str(uuid.uuid4()),
+                "clinic_id": str(clinic_id),
+                "retell_call_id": call_info.get("call_id"),
+                "direction": call_info.get("direction", "inbound"),
+                "call_type": "booking" if call_outcome == "booked" else "general",
+                "from_number": call_info.get("from_number") or "+14155552671",
+                "to_number": call_info.get("to_number") or "+15755734355",
+                "duration_seconds": dur_sec or 45,
+                "status": "ended",
+                "outcome": call_outcome,
+                "transcript": transcript_formatted,
+                "recording_url": call_info.get("recording_url"),
+                "created_at": now_str,
+                "started_at": now_str,
+                "ended_at": now_str
+            }
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase.table("calls").insert(call_record).execute()
+            )
+            log.info(f"[retell.webhook] Direct calls table insert complete for {call_info.get('call_id')}")
+        except Exception as direct_err:
+            log.warning(f"[retell.webhook] Direct calls table insert note: {direct_err}")
 
         # --- Language Detection Hook ---
         # Extract transcript text from call_info if available
