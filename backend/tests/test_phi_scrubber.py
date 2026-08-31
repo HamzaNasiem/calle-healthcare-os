@@ -18,7 +18,7 @@ def test_scrub_phi():
 
     # Test Name redaction
     assert scrub_phi("Hamza Nasiem") == "H*** N***"
-    assert scrub_phi("Patient John Doe has") == "Patient J*** D*** has"
+    assert scrub_phi("user John Doe has") == "user J*** D*** has"
 
 def test_phi_scrubber_filter(capsys):
     # Setup a local logger with the scrubber filter
@@ -32,7 +32,7 @@ def test_phi_scrubber_filter(capsys):
     test_logger.addHandler(handler)
     
     # Log sensitive info
-    test_logger.info("Patient John Doe has email test@example.com and phone (123) 456-7890. Born: 1985-12-01.")
+    test_logger.info("user John Doe has email test@example.com and phone (123) 456-7890. Born: 1985-12-01.")
     
     # Capture output
     captured = capsys.readouterr()

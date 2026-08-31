@@ -145,7 +145,7 @@ export default function Patients() {
     try {
       // Map filterType to API query parameters
       let recallParam = null;
-      if (filterType === "Due for Recall") recallParam = "due_for_recall";
+      if (filterType === "Due for Recall") recallParam = "due";
       if (filterType === "Overdue 60d+") recallParam = "overdue_60d";
       if (filterType === "Up to Date") recallParam = "up_to_date";
 
@@ -153,7 +153,7 @@ export default function Patients() {
       try {
         const params = new URLSearchParams({ page: 1, per_page: 100 });
         if (searchTerm) params.set("search", searchTerm);
-        if (recallParam) params.set("recall_status", recallParam);
+        if (recallParam) params.set("recall_filter", recallParam);
         if (filterType === "VIP") params.set("is_vip", "true");
 
         const res = await api.get(`/patients?${params.toString()}`);

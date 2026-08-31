@@ -1095,15 +1095,15 @@ async def run_recall_campaign(
         resource_type="outbound_campaigns",
         details={
             "days_threshold": body.days_threshold,
-            "patients_queued": len(appointments),
+            "patients_queued": len(patients),
             "dry_run": calle_service.is_dry_run(),
         },
         request=request,
     )
 
     return {
-        "message": f"Recall campaign started for {len(appointments)} patients ({body.days_threshold}-day threshold).",
-        "queued": len(appointments),
+        "message": f"Recall campaign started for {len(patients)} patients ({body.days_threshold}-day threshold).",
+        "queued": len(patients),
         "dry_run": calle_service.is_dry_run(),
     }
 

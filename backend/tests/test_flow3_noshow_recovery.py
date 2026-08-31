@@ -35,33 +35,41 @@ def test_revenue_recovery_calculation():
 # TIER 2: Integration Tests
 @pytest.mark.asyncio
 async def test_post_no_show_recovery_endpoint():
-    # Mocking dependencies
-    with patch("src.api.routers.calle_router.supabase_read") as mock_read:
-        # mock supabase response
-        mock_read.table().select().eq().gte().lte().eq().limit().execute.return_value.data = [
-            {"id": "test_id", "patient_id": "p1", "patient_phone": "+15551234567", "patient_name": "Emily", "datetime": "2026-08-31T08:30:00+00:00", "appointment_type": "initial"}
-        ]
+    # Provide direct mock appointments via patch instead of mocking supabase chain
+    mock_appts = [{"id": "test_id", "patient_id": "p1", "patient_phone": "+15551234567", "patient_name": "Emily", "datetime": "2026-08-31T08:30:00+00:00", "appointment_type": "initial"}]
+    with patch("src.api.routers.calle_router.asyncio.get_event_loop") as mock_loop:
+        async def mock_run(*args, **kwargs):
+            mock_res = MagicMock()
+            mock_res.data = mock_appts
+            return mock_res
+        mock_loop.return_value.run_in_executor = mock_run
         
-        with patch("src.services.calle_service.CalleService.no_show_recovery_call", return_value={"id": "mock_call", "status": "completed"}) as mock_call:
-            with patch("src.api.routers.calle_router._save_outbound_call"):
-                mock_bg = MagicMock()
-                mock_auth = MagicMock()
-                res = await run_no_show_campaign(background_tasks=mock_bg, auth=mock_auth)
-                assert res["queued"] == 1
-                mock_call.assert_called_once()
+        with patch("src.api.routers.calle_router._resolve_appt_phone_and_name", return_value=("+15551234567", "Emily")):
+            with patch("src.api.routers.calle_router.calle_service.no_show_recovery_call", return_value={"id": "mock_call", "status": "completed"}) as mock_call:
+                with patch("src.api.routers.calle_router._save_outbound_call"):
+                    mock_bg = MagicMock()
+                    mock_auth = MagicMock()
+                    mock_auth.user_id = "test_user"
+                    mock_auth.email = "test@test.com"
+                    with patch("src.api.routers.calle_router.audit_service.log"):
+                        res = await run_no_show_campaign(background_tasks=mock_bg, auth=mock_auth)
+                        assert res["queued"] == 1
+                        mock_call.assert_called_once()
 
 # TIER 3: System Tests
 @pytest.mark.asyncio
 async def test_scheduler_job():
     with patch("src.services.scheduler.supabase_read") as mock_read:
-        mock_read.table().select().eq().lte().gte().execute.return_value.data = [
-            {"id": "fb8ed22b-f5f7-4b83-8823-73c07e152c5c", "patient_phone": "+12223334444", "patient_name": "Emily Rodriguez", "datetime": "2026-08-31T08:30:00+00:00"}
-        ]
+        mock_appts = MagicMock()
+        mock_appts.data = [{"id": "fb8ed22b-f5f7-4b83-8823-73c07e152c5c", "patient_phone": "+12223334444", "patient_name": "Emily Rodriguez", "datetime": "2026-08-31T08:30:00+00:00"}]
+        mock_read.table.return_value.select.return_value.eq.return_value.lte.return_value.gte.return_value.execute.return_value = mock_appts
+        mock_read.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [] # existing
+        
         with patch("src.services.scheduler.supabase") as mock_supa:
-            with patch("src.services.calle_service.CalleService.no_show_recovery_call", return_value={"id": "mock_call", "status": "completed", "task_completed": True}):
+            with patch("src.services.scheduler.calle_service.no_show_recovery_call", return_value={"id": "mock_call", "status": "completed", "task_completed": True}):
                 await job_calle_noshow_recovery()
-                assert mock_supa.table().insert.called
-                assert mock_supa.table().update.called
+                assert mock_supa.table.return_value.insert.called
+                assert mock_supa.table.return_value.update.called
 
 # Additional tests to reach 10 target
 def test_noshow_schema():
