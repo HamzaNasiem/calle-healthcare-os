@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 import datetime
+import re
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
@@ -378,6 +379,17 @@ async def get_dashboard_recent_calls(
         ).eq("clinic_id", clinic_id).order("created_at", desc=True).limit(limit).execute()
 
         raw_calls = res.data or []
+        patient_ids = list({c["patient_id"] for c in raw_calls if c.get("patient_id")})
+        patients_map = {}
+        if patient_ids:
+            try:
+                p_res = supabase_read.table("patients").select("id, name, phone").in_("id", patient_ids).execute()
+                if p_res.data:
+                    for p in p_res.data:
+                        patients_map[p["id"]] = p.get("name")
+            except Exception:
+                pass
+
         enriched_calls = []
 
         for call in raw_calls:
@@ -388,6 +400,8 @@ async def get_dashboard_recent_calls(
             m = dur // 60
             s = dur % 60
             duration_formatted = f"{m}m {s:02d}s" if m > 0 else f"{s}s"
+            pid = call.get("patient_id")
+            resolved_patient_name = patients_map.get(pid) or call.get("from_number") or "Patient Caller"
 
             enriched_calls.append({
                 "id": call.get("id"),
@@ -395,8 +409,8 @@ async def get_dashboard_recent_calls(
                 "call_type": call.get("call_type") or "booking",
                 "from_number": call.get("from_number") or "Unknown Caller",
                 "to_number": call.get("to_number"),
-                "patient_id": call.get("patient_id"),
-                "patient_name": call.get("patient_name") or call.get("from_number") or "Patient Caller",
+                "patient_id": pid,
+                "patient_name": resolved_patient_name,
                 "duration_seconds": dur,
                 "duration_formatted": duration_formatted,
                 "outcome": (call.get("outcome") or "completed").lower(),
@@ -427,22 +441,45 @@ async def trigger_quick_test_call(
     try:
         # Record test call event
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        phone = payload.phone_number or "+10000000000"
+        pat_name = payload.patient_name or "Sandbox Test Patient"
+        patient_id = None
+
+        try:
+            pat_res = supabase_read.table("patients").select("id").eq("clinic_id", clinic_id).eq("phone", phone).maybe_single().execute()
+            if pat_res and pat_res.data:
+                patient_id = pat_res.data.get("id") if isinstance(pat_res.data, dict) else pat_res.data[0].get("id")
+            else:
+                new_pat = supabase.table("patients").insert({
+                    "clinic_id": clinic_id,
+                    "name": pat_name,
+                    "phone": phone,
+                    "insurance_provider": "Self-Pay",
+                    "created_at": now_iso
+                }).execute()
+                if new_pat.data:
+                    patient_id = new_pat.data.get("id") if isinstance(new_pat.data, dict) else new_pat.data[0].get("id")
+        except Exception as p_err:
+            log.warning(f"[quick_test_call] Patient lookup error: {p_err}")
+
         test_call_record = {
             "clinic_id": clinic_id,
             "direction": "inbound",
             "call_type": payload.scenario or "booking",
-            "from_number": payload.phone_number or "+10000000000",  # Use neutral test number, not 555
-            "patient_name": payload.patient_name or "Sandbox Test Patient",
+            "from_number": phone,
+            "patient_id": patient_id,
             "duration_seconds": 95,
             "outcome": "booked",
-            "status": "completed",
-            "is_test": True,  # Flag so test records can be filtered from real analytics
+            "status": "ended",
             "transcript": f"Caller: Hello, I'd like to test the receptionist AI.\nCALL-E AI: Hello! I can assist you with scheduling and clinical inquiries. Test completed successfully.",
             "created_at": now_iso
         }
         
         insert_res = supabase.table("calls").insert(test_call_record).execute()
-        inserted = insert_res.data[0] if insert_res.data else test_call_record
+        inserted = insert_res.data if isinstance(insert_res.data, dict) else (insert_res.data[0] if insert_res.data else test_call_record)
+        # Attach patient_name for frontend display
+        if isinstance(inserted, dict):
+            inserted["patient_name"] = pat_name
 
         # Invalidate dashboard cache — must use the same key prefix pattern as the write
         from ...core.cache import local_cache
@@ -452,10 +489,12 @@ async def trigger_quick_test_call(
         else:
             local_cache.delete(f"dashboard_stats_{clinic_id}")
 
-
         # Broadcast real-time WebSocket event
         try:
-            from src.ws.manager import tenant_room_manager, WebSocketEvent
+            try:
+                from ...ws.manager import tenant_room_manager, WebSocketEvent
+            except ImportError:
+                from src.ws.manager import tenant_room_manager, WebSocketEvent
             import asyncio
             asyncio.create_task(tenant_room_manager.broadcast_event(
                 str(clinic_id),
@@ -645,7 +684,8 @@ async def handle_voice_chat(
     is_booking = any(w in lower for w in [
         "appointment", "book", "schedule", "visit", "consultation", "checkup", 
         "tomorrow", "friday", "monday", "tuesday", "wednesday", "thursday", 
-        "yes", "confirm", "see doctor", "slot", "available"
+        "yes", "confirm", "see doctor", "slot", "available",
+        "cita", "agendar", "reservar", "consulta", "mañana", "viernes", "lunes", "martes", "jueves"
     ])
 
     if is_booking:
@@ -653,26 +693,49 @@ async def handle_voice_chat(
             # Determine booking date
             now = datetime.datetime.now(datetime.timezone.utc)
             days_ahead = 1
-            if "monday" in lower:
+            if "monday" in lower or "lunes" in lower:
                 days_ahead = (0 - now.weekday()) % 7 or 7
-            elif "tuesday" in lower:
+            elif "tuesday" in lower or "martes" in lower:
                 days_ahead = (1 - now.weekday()) % 7 or 7
-            elif "wednesday" in lower:
+            elif "wednesday" in lower or "miércoles" in lower or "miercoles" in lower:
                 days_ahead = (2 - now.weekday()) % 7 or 7
-            elif "thursday" in lower:
+            elif "thursday" in lower or "jueves" in lower:
                 days_ahead = (3 - now.weekday()) % 7 or 7
-            elif "friday" in lower:
+            elif "friday" in lower or "viernes" in lower:
                 days_ahead = (4 - now.weekday()) % 7 or 7
-            elif "tomorrow" in lower:
+            elif "tomorrow" in lower or "mañana" in lower:
                 days_ahead = 1
 
+            # Extract requested time from speech (e.g. "10 AM", "10:00 AM", "2 PM", "11:30", "las diez")
+            time_match = re.search(r'\b(1[0-2]|0?[1-9])(?::([0-5][0-9]))?\s*(am|pm)\b', lower)
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2)) if time_match.group(2) else 0
+                meridiem = time_match.group(3).lower()
+                if meridiem == "pm" and hour != 12:
+                    hour += 12
+                elif meridiem == "am" and hour == 12:
+                    hour = 0
+                slot_time_str = f"{hour:02d}:{minute:02d}:00"
+                slot_time_formatted = datetime.time(hour, minute).strftime("%I:%M %p").lstrip("0")
+            elif "diez" in lower:
+                slot_time_str = "10:00:00"
+                slot_time_formatted = "10:00 AM"
+            else:
+                slot_time_str = "10:00:00"
+                slot_time_formatted = "10:00 AM"
+
             target_date = (now + datetime.timedelta(days=days_ahead)).date()
-            target_iso = f"{target_date.isoformat()}T10:30:00Z"
-            formatted_date = target_date.strftime("%A, %B %d at 10:30 AM")
+            target_iso = f"{target_date.isoformat()}T{slot_time_str}Z"
+            formatted_date = f"{target_date.strftime('%A, %B %d')} at {slot_time_formatted}"
 
             # Upsert patient in Master Patient Index
             phone = payload.patient_phone or "+14155552671"
             pat_name = payload.patient_name or "Voice Test Patient"
+            if pat_name in ("Patient", "Voice Test Patient"):
+                name_match = re.search(r'\b(?:my name is|i am|this is|name\'?s)\s+([a-zA-Z]+)', user_msg, re.IGNORECASE)
+                if name_match:
+                    pat_name = name_match.group(1).capitalize()
             pat_id = None
 
             pat_res = supabase_read.table("patients").select("id").eq("clinic_id", clinic_id).eq("phone", phone).maybe_single().execute()
@@ -683,7 +746,6 @@ async def handle_voice_chat(
                     "clinic_id": clinic_id,
                     "name": pat_name,
                     "phone": phone,
-                    "recall_status": "up_to_date",
                     "insurance_provider": "Self-Pay",
                     "created_at": now.isoformat()
                 }).execute()
@@ -713,7 +775,11 @@ async def handle_voice_chat(
                 try:
                     from ...core.cache import local_cache
                     local_cache.delete(f"dashboard_stats_{clinic_id}")
-                    from src.ws.manager import tenant_room_manager, WebSocketEvent
+                    try:
+                        from ...ws.manager import tenant_room_manager, WebSocketEvent
+                    except ImportError:
+                        from src.ws.manager import tenant_room_manager, WebSocketEvent
+                    import asyncio
                     asyncio.create_task(tenant_room_manager.broadcast_event(
                         str(clinic_id),
                         WebSocketEvent.APPOINTMENT_ADDED,
@@ -721,6 +787,23 @@ async def handle_voice_chat(
                     ))
                 except Exception:
                     pass
+
+                # Trigger real-time SMS booking confirmation
+                try:
+                    from ...services.sms_service import sms_service
+                    import asyncio
+                    asyncio.create_task(sms_service.send_booking_confirmation(
+                        phone=phone,
+                        time_str=formatted_date,
+                        provider_name=doctor_name,
+                        clinic_id=clinic_id,
+                        patient_name=pat_name,
+                        appointment_id=appt_data.get("id"),
+                        patient_id=pat_id,
+                        clinic_name=clinic_name,
+                    ))
+                except Exception as sms_err:
+                    log.warning(f"[voice_chat] SMS trigger warning: {sms_err}")
 
             if lang == "es":
                 reply = f"¡Perfecto! He reservado su cita con {doctor_name} para el {formatted_date}. La cita ha sido confirmada y registrada en nuestro sistema clínico."
