@@ -92,6 +92,16 @@ const RequireAuthOrLanding = ({ children }) => {
 
 // ─── Inner App — Router ke andar (useAuth use karne ke liye) ─────────────
 function AppRoutes() {
+  // Continuous keep-alive heartbeat (pings Render backend every 4 minutes while app is open)
+  React.useEffect(() => {
+    const pingBackend = () => {
+      fetch("https://calle-healthcare-os.onrender.com/health", { method: "GET", mode: "no-cors" }).catch(() => {});
+    };
+    pingBackend();
+    const interval = setInterval(pingBackend, 4 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <Routes>
       {/* Public routes — sirf logged-OUT users ke liye */}

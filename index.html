@@ -7,7 +7,15 @@
     <meta name="description" content="AI-powered clinic management — scheduling, patient management and call tracking." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://calle-healthcare-os.onrender.com" />
+    <link rel="preconnect" href="https://calle-healthcare-os.onrender.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      // Zero-latency background wake-up pulse for Render cold-start mitigation
+      try {
+        fetch("https://calle-healthcare-os.onrender.com/health", { method: "GET", mode: "no-cors" }).catch(function () {});
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
