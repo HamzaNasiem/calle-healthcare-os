@@ -141,11 +141,15 @@ const Login = () => {
       navigate("/");
 
     } catch (err) {
-      setError(
-        err.response?.data?.error ||
-          err.response?.data?.detail ||
-          "Failed to login. Please check credentials.",
-      );
+      if (!err.response || err.code === "ECONNABORTED" || err.message?.includes("Network Error")) {
+        setError("Backend server is waking up (Render cold start). Please wait 10-15 seconds and click Sign In again.");
+      } else {
+        setError(
+          err.response?.data?.error ||
+            err.response?.data?.detail ||
+            "Failed to login. Please check credentials.",
+        );
+      }
     } finally {
       setLoading(false);
     }
