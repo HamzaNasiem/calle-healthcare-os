@@ -286,8 +286,8 @@ async def list_prior_auths(
                 try:
                     p_res = await db.execute(select(Patient).where(Patient.id == r.patient_id))
                     p_rec = p_res.scalar_one_or_none()
-                    if p_rec and p_rec.full_name:
-                        p_name = p_rec.full_name
+                    if p_rec:
+                        p_name = getattr(p_rec, "name", None) or getattr(p_rec, "full_name", None) or "Patient"
                 except Exception:
                     pass
 
@@ -608,8 +608,8 @@ async def get_prior_auth_detail(
         try:
             p_res = await db.execute(select(Patient).where(Patient.id == r.patient_id))
             p_rec = p_res.scalar_one_or_none()
-            if p_rec and p_rec.full_name:
-                patient_name = p_rec.full_name
+            if p_rec:
+                patient_name = getattr(p_rec, "name", None) or getattr(p_rec, "full_name", None) or "Patient"
         except Exception:
             pass
 

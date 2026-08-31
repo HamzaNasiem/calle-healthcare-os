@@ -773,7 +773,9 @@ const Appointments = () => {
       const params = new URLSearchParams();
       params.append("limit", "200");
 
-      if (tab === "today") {
+      if (viewMode === "calendar" || tab === "all") {
+        // Fetch all appointments for full month calendar visibility
+      } else if (tab === "today") {
         params.append("date_from", startOfDay(now).toISOString());
         params.append("date_to", endOfDay(now).toISOString());
       } else if (tab === "upcoming") {
@@ -790,12 +792,12 @@ const Appointments = () => {
     } finally {
       setLoading(false);
     }
-  }, [getCacheItem, setCacheItem]);
+  }, [getCacheItem, setCacheItem, viewMode]);
 
   useEffect(() => {
-    fetchAppointments(activeDateTab);
+    fetchAppointments(viewMode === "calendar" ? "all" : activeDateTab);
     fetchClinicStatus();
-  }, [activeDateTab, fetchAppointments, fetchClinicStatus]);
+  }, [activeDateTab, viewMode, fetchAppointments, fetchClinicStatus]);
 
   // WebSocket Live Events Listener
   useEffect(() => {
@@ -1019,12 +1021,13 @@ const Appointments = () => {
 
   const grouped = useMemo(() => {
     return appointmentsWithConflicts.reduce((acc, appt) => {
-      const key = clinicDateKey(appt.datetime, clinicTz);
+      const d = new Date(appt.datetime);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       if (!acc[key]) acc[key] = [];
       acc[key].push(appt);
       return acc;
     }, {});
-  }, [appointmentsWithConflicts, clinicTz]);
+  }, [appointmentsWithConflicts]);
 
   // Metric counts
   const stats = useMemo(() => {
