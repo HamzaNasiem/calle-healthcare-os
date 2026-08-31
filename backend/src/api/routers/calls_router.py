@@ -134,6 +134,27 @@ async def get_calls(
         except Exception:
             pass
 
+        # Resolve patient names for all call records using flat patients table
+        patient_ids = list({str(c["patient_id"]) for c in calls_data if c.get("patient_id")})
+        if patient_ids:
+            try:
+                from ...core.database import LocalPostgresClient
+                _db = LocalPostgresClient()
+                placeholders = ",".join(["%s"] * len(patient_ids))
+                p_rows = _db.execute(
+                    f"SELECT id::text, name, phone FROM patients WHERE id::text IN ({placeholders})",
+                    tuple(patient_ids)
+                )
+                p_map = {r["id"]: r for r in p_rows}
+                for c in calls_data:
+                    pid = str(c.get("patient_id") or "")
+                    if pid in p_map:
+                        c["patient_name"] = p_map[pid].get("name") or c.get("patient_name")
+                        if not c.get("patients"):
+                            c["patients"] = {"name": p_map[pid].get("name"), "phone": p_map[pid].get("phone")}
+            except Exception as pe:
+                log.warning(f"[calls] Patient name resolution note: {pe}")
+
         # Check 24-hour HIPAA auto-purge on recording_url
         now_dt = datetime.now(timezone.utc)
         for c in calls_data:
