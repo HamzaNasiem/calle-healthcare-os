@@ -54,6 +54,9 @@ async def test_post_no_show_recovery_endpoint():
                     with patch("src.api.routers.calle_router.audit_service.log"):
                         res = await run_no_show_campaign(background_tasks=mock_bg, auth=mock_auth)
                         assert res["queued"] == 1
+                        # execute the background task
+                        batch_func = mock_bg.add_task.call_args[0][0]
+                        await batch_func()
                         mock_call.assert_called_once()
 
 # TIER 3: System Tests
