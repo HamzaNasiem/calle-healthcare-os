@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, desc, or_
+from sqlalchemy import select, func, desc, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.security import get_current_user_with_role, require_permission
@@ -105,10 +105,46 @@ def _get_user_id(user: Any) -> uuid.UUID:
     return uid
 
 
+def _get_data_file(filename: str) -> Path:
+    # Resolve relative to backend/src/data
+    candidate = Path(__file__).resolve().parent.parent.parent / "data" / filename
+    if candidate.exists():
+        return candidate
+    for alt in [Path("src/data") / filename, Path("backend/src/data") / filename]:
+        if alt.exists():
+            return alt
+    return candidate
+
+
+async def _fetch_patient_name(db: AsyncSession, patient_id: Optional[uuid.UUID]) -> str:
+    if not patient_id:
+        return "Patient"
+    try:
+        res = await db.execute(
+            text("SELECT name FROM patients WHERE id::text = :pid"),
+            {"pid": str(patient_id)}
+        )
+        row = res.fetchone()
+        if row and row[0]:
+            return row[0]
+    except Exception:
+        pass
+    try:
+        p_stmt = select(Patient).where(Patient.id == patient_id)
+        p_res = await db.execute(p_stmt)
+        pat = p_res.scalar_one_or_none()
+        if pat:
+            return getattr(pat, "name", None) or getattr(pat, "full_name", None) or "Patient"
+    except Exception:
+        pass
+    return "Patient"
+
+
 # Global in-memory fallback store for development/testing
 _IN_MEMORY_PRIOR_AUTHS: Dict[str, Dict[str, Any]] = {}
 
 
+@router.post("/create", status_code=201)
 @router.post("/request", status_code=201)
 @router.post("", status_code=201)
 async def create_prior_auth_request(
@@ -122,16 +158,7 @@ async def create_prior_auth_request(
     # Do NOT pre-generate auth codes — they must come from the insurer via CALL-E
     # Do NOT set approved status before the call runs
 
-    patient_name = "Patient"
-    if req.patient_id:
-        try:
-            p_stmt = select(Patient).where(Patient.id == req.patient_id)
-            p_res = await db.execute(p_stmt)
-            pat = p_res.scalar_one_or_none()
-            if pat and pat.full_name:
-                patient_name = pat.full_name
-        except Exception:
-            pass
+    patient_name = await _fetch_patient_name(db, req.patient_id)
 
     # Initial state: pending — will be updated via CALL-E webhook
     mem_item = {
@@ -205,18 +232,42 @@ async def create_prior_auth_request(
                 pa_record.calle_task_id = call_res["calle_task_id"]
                 mem_item["calle_task_id"] = call_res["calle_task_id"]
                 await db.commit()
-            # If dry-run completed synchronously, update mem_item with real result
-            if call_res.get("auth_status") and call_res["auth_status"] != "pending":
+            # If call/simulation completed synchronously, update mem_item with real result
+            res_auth_status = (
+                call_res.get("auth_status") 
+                or (call_res.get("call_result", {}).get("structured_result", {}).get("status"))
+                or ("approved" if call_res.get("authorization_number") or call_res.get("auth_number") else "pending")
+            )
+            auth_num_val = (
+                call_res.get("authorization_number") 
+                or call_res.get("auth_number") 
+                or (call_res.get("call_result", {}).get("structured_result", {}).get("authorization_number"))
+            )
+            ref_num_val = (
+                call_res.get("reference_number") 
+                or (call_res.get("call_result", {}).get("structured_result", {}).get("reference_number"))
+            )
+            agent_val = (
+                call_res.get("insurance_agent_name") 
+                or (call_res.get("call_result", {}).get("structured_result", {}).get("insurance_agent_name"))
+            )
+            summary_val = (
+                call_res.get("call_summary") 
+                or (call_res.get("call_result", {}).get("structured_result", {}).get("call_summary")) 
+                or mem_item["call_summary"]
+            )
+
+            if res_auth_status and res_auth_status != "pending":
                 mem_item.update({
-                    "status": call_res.get("auth_status", "pending"),
-                    "auth_status": call_res.get("auth_status", "pending"),
+                    "status": res_auth_status,
+                    "auth_status": res_auth_status,
                     "call_status": call_res.get("status", "completed"),
-                    "auth_number": call_res.get("authorization_number"),
-                    "authorization_number": call_res.get("authorization_number"),
-                    "reference_number": call_res.get("reference_number"),
-                    "insurance_agent_name": call_res.get("insurance_agent_name"),
-                    "call_duration_seconds": call_res.get("call_duration_seconds"),
-                    "call_summary": call_res.get("call_summary", mem_item["call_summary"]),
+                    "auth_number": auth_num_val,
+                    "authorization_number": auth_num_val,
+                    "reference_number": ref_num_val,
+                    "insurance_agent_name": agent_val,
+                    "call_duration_seconds": call_res.get("call_duration_seconds", 186),
+                    "call_summary": summary_val,
                 })
         except Exception as e:
             logger.warning(f"[PriorAuth] CALL-E service notice: {e}")
@@ -281,15 +332,7 @@ async def list_prior_auths(
         
         for r in records:
             # Retrieve patient name if possible
-            p_name = "Patient"
-            if r.patient_id:
-                try:
-                    p_res = await db.execute(select(Patient).where(Patient.id == r.patient_id))
-                    p_rec = p_res.scalar_one_or_none()
-                    if p_rec:
-                        p_name = getattr(p_rec, "name", None) or getattr(p_rec, "full_name", None) or "Patient"
-                except Exception:
-                    pass
+            p_name = await _fetch_patient_name(db, r.patient_id)
 
             auth_num = r.authorization_number if user_role in ["owner", "clinician", "admin"] else "***"
             db_data.append(PriorAuthItemResponse(
@@ -458,7 +501,7 @@ async def get_prior_auth_stats(
 
 @router.get("/insurance-providers")
 async def get_insurance_providers():
-    data_file = Path("src/data/insurance_providers.json")
+    data_file = _get_data_file("insurance_providers.json")
     if data_file.exists():
         try:
             with open(data_file, "r", encoding="utf-8") as f:
@@ -483,7 +526,7 @@ async def get_insurance_providers():
 
 @router.get("/cpt-codes")
 async def get_cpt_codes(q: Optional[str] = Query(None)):
-    data_file = Path("src/data/common_cpt_codes.json")
+    data_file = _get_data_file("common_cpt_codes.json")
     codes = []
     if data_file.exists():
         try:
@@ -514,7 +557,7 @@ async def get_cpt_codes(q: Optional[str] = Query(None)):
 
 @router.get("/icd10-codes")
 async def get_icd10_codes(q: Optional[str] = Query(None)):
-    data_file = Path("src/data/common_icd10_codes.json")
+    data_file = _get_data_file("common_icd10_codes.json")
     codes = []
     if data_file.exists():
         try:
@@ -549,6 +592,55 @@ async def get_prior_auth_detail(
     user_role = getattr(user, 'role', 'owner')
     tenant_id = _get_tenant_id(user)
 
+    r = None
+    try:
+        stmt = select(PriorAuthRequest).where(
+            PriorAuthRequest.id == id,
+            PriorAuthRequest.tenant_id == tenant_id,
+            PriorAuthRequest.is_deleted == False
+        )
+        res = await db.execute(stmt)
+        r = res.scalar_one_or_none()
+    except Exception as e:
+        logger.warning(f"[PriorAuth] Error querying single record {id}: {e}")
+
+    if r:
+        patient_name = await _fetch_patient_name(db, r.patient_id)
+        auth_num = None
+        if r.authorization_number_encrypted:
+            auth_num = r.authorization_number if user_role in ["owner", "clinician", "admin"] else "***"
+
+        await audit_service.log_action(db, tenant_id, _get_user_id(user), "view_prior_auth", f"Viewed prior auth request {id}")
+
+        return {
+            "success": True,
+            "data": {
+                "id": str(r.id),
+                "patient_id": str(r.patient_id) if r.patient_id else None,
+                "patient_name": patient_name,
+                "provider_id": str(r.provider_id) if r.provider_id else None,
+                "insurance_provider_name": r.insurance_provider_name or "",
+                "insurance_prior_auth_phone": r.insurance_prior_auth_phone,
+                "patient_member_id": r.patient_member_id if user_role in ["owner", "clinician", "admin"] else "***",
+                "cpt_code": r.cpt_code or "",
+                "cpt_description": r.cpt_description or "Medical Procedure",
+                "icd10_code": r.icd10_code or "",
+                "icd10_description": r.icd10_description or "Diagnosis code",
+                "status": r.auth_status or "pending",
+                "auth_status": r.auth_status or "pending",
+                "call_status": r.call_status or "pending",
+                "urgency": r.urgency or "standard",
+                "created_at": r.created_at.isoformat() if r.created_at else datetime.now(timezone.utc).isoformat(),
+                "auth_number": auth_num,
+                "authorization_number": auth_num,
+                "reference_number": r.reference_number,
+                "insurance_agent_name": r.insurance_agent_name,
+                "call_summary": r.call_summary,
+                "call_duration_seconds": r.call_duration_seconds or 184
+            }
+        }
+
+    # Fallback to in-memory store if not in DB
     if sid in _IN_MEMORY_PRIOR_AUTHS:
         v = _IN_MEMORY_PRIOR_AUTHS[sid]
         try:
@@ -587,73 +679,7 @@ async def get_prior_auth_detail(
             }
         }
 
-    r = None
-    try:
-        stmt = select(PriorAuthRequest).where(
-            PriorAuthRequest.id == id,
-            PriorAuthRequest.tenant_id == tenant_id,
-            PriorAuthRequest.is_deleted == False
-        )
-        res = await db.execute(stmt)
-        r = res.scalar_one_or_none()
-    except Exception as e:
-        logger.warning(f"[PriorAuth] Error querying single record {id}: {e}")
-    
-    if not r:
-        raise HTTPException(status_code=404, detail="Prior auth request not found")
-
-    # Patient details
-    patient_name = "Patient"
-    if r.patient_id:
-        try:
-            p_res = await db.execute(select(Patient).where(Patient.id == r.patient_id))
-            p_rec = p_res.scalar_one_or_none()
-            if p_rec:
-                patient_name = getattr(p_rec, "name", None) or getattr(p_rec, "full_name", None) or "Patient"
-        except Exception:
-            pass
-
-    # NOTE: No auto-approval safety net — authorization must come from the insurer via CALL-E webhook.
-    # A long-pending record indicates CALL-E is processing; the UI should show "In Progress" state.
-
-    # Decrypt auth number for authorized roles only
-    auth_num = None
-    if user_role in ["owner", "clinician", "admin"] and r.authorization_number_encrypted:
-        auth_num = r.authorization_number
-    elif r.authorization_number_encrypted:
-        auth_num = r.authorization_number
-    # If no auth number exists yet, return None (pending) — do not fabricate one
-        
-    await audit_service.log_action(db, tenant_id, _get_user_id(user), "view_prior_auth", f"Viewed prior auth request {id}")
-
-    
-    return {
-        "success": True,
-        "data": {
-            "id": str(r.id),
-            "patient_id": str(r.patient_id) if r.patient_id else None,
-            "patient_name": patient_name,
-            "provider_id": str(r.provider_id) if r.provider_id else None,
-            "insurance_provider_name": r.insurance_provider_name or "",
-            "insurance_prior_auth_phone": r.insurance_prior_auth_phone,
-            "patient_member_id": r.patient_member_id if user_role in ["owner", "clinician", "admin"] else "***",
-            "cpt_code": r.cpt_code or "",
-            "cpt_description": r.cpt_description or "Medical Procedure",
-            "icd10_code": r.icd10_code or "",
-            "icd10_description": r.icd10_description or "Diagnosis code",
-            "status": r.auth_status or "pending",
-            "auth_status": r.auth_status or "pending",
-            "call_status": r.call_status or "pending",
-            "urgency": r.urgency or "standard",
-            "created_at": r.created_at.isoformat() if r.created_at else datetime.now(timezone.utc).isoformat(),
-            "auth_number": auth_num,
-            "authorization_number": auth_num,
-            "reference_number": r.reference_number,
-            "insurance_agent_name": r.insurance_agent_name,
-            "call_summary": r.call_summary,
-            "call_duration_seconds": r.call_duration_seconds or 184
-        }
-    }
+    raise HTTPException(status_code=404, detail="Prior auth request not found")
 
 
 @router.post("/{id}/retry")
