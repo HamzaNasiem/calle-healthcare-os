@@ -19,8 +19,8 @@ from .routers.agency_router import router as agency_router
 from .routers.agent_config_router import router as agent_config_router
 from .webhooks.twilio_webhook import router as twilio_webhook
 from .routers.ehr_router import router as ehr_router
-from .routers.integrations_router import router as integrations_router
 from .webhooks.telnyx_webhook import router as telnyx_webhook
+from .webhooks.retell_webhook import router as retell_webhook
 from .routers.security_router import router as security_router
 from .routers.calle_router import router as calle_router
 from .v1.outbound_calls import router as outbound_calls_router, webhook_router as outbound_webhook_router
@@ -50,6 +50,7 @@ api_router.include_router(agency_router)
 api_router.include_router(agent_config_router)
 api_router.include_router(twilio_webhook)
 api_router.include_router(telnyx_webhook)
+api_router.include_router(retell_webhook)
 api_router.include_router(ehr_router)
 api_router.include_router(integrations_router)
 api_router.include_router(security_router)
