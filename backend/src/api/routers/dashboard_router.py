@@ -41,7 +41,7 @@ def _derive_call_sentiment(call: dict) -> tuple[str, str]:
     elif outcome in ["transferred"]:
         return "neutral", "Transferred to Staff"
 
-    if any(w in transcript for w in ["thank you", "great", "perfect", "appreciate", "confirmed", "excellent", "awesome"]):
+    if any(w in transcript for w in ["thank you", "great", "perfect", "appreciate", "confirmed", "excellent", "awesome", "book", "appointment"]):
         return "positive", "Positive (Satisfied)"
     if any(w in transcript for w in ["cancel", "unhappy", "pain", "emergency", "urgent", "wrong", "complaint"]):
         return "critical", "Critical Attention"
