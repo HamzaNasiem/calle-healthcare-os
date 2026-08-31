@@ -413,22 +413,43 @@ const Dashboard = () => {
       return;
     }
     try {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.lang = language === "es" ? "es-MX" : "en-US";
-      rec.interimResults = false;
+      rec.interimResults = true;
 
-      rec.onstart = () => setIsListening(true);
+      rec.onstart = () => {
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+        setIsListening(true);
+      };
+      rec.onspeechstart = () => {
+        // Instant Barge-In: Kill bot speech the moment user speaks
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+      };
       rec.onerror = (e) => {
         console.error("Speech recognition error:", e);
         setIsListening(false);
       };
       rec.onend = () => setIsListening(false);
       rec.onresult = (event) => {
-        const speechToText = event.results[0][0].transcript;
-        if (speechToText && speechToText.trim()) {
-          setSimLines((prev) => [...prev, { type: "user", text: `You: ${speechToText}` }]);
-          handleBotResponse(speechToText);
+        // Cancel bot speech immediately upon any recognized speech
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+        const lastResult = event.results[event.results.length - 1];
+        if (lastResult.isFinal) {
+          const speechToText = lastResult[0].transcript;
+          if (speechToText && speechToText.trim()) {
+            setSimLines((prev) => [...prev, { type: "user", text: `You: ${speechToText}` }]);
+            handleBotResponse(speechToText);
+          }
         }
       };
 
@@ -1343,7 +1364,12 @@ const Dashboard = () => {
                   <input
                     type="text"
                     value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
+                    onChange={(e) => {
+                      if ("speechSynthesis" in window) {
+                        window.speechSynthesis.cancel();
+                      }
+                      setInputText(e.target.value);
+                    }}
                     disabled={isBotTyping}
                     placeholder={
                       isListening
