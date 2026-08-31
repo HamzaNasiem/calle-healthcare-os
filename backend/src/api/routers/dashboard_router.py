@@ -731,33 +731,36 @@ async def handle_voice_chat(
             log.warning(f"[voice_chat] Booking error: {booking_err}")
             reply = f"I would be glad to help you schedule with {doctor_name}. We have availability tomorrow at 10:30 AM. Would you like me to reserve that time?"
 
-    # Intent 2: Doctor / Specialty / Location inquiry
-    elif any(w in lower for w in ["doctor", "dr", "physician", "specialist", "specialty", "who"]):
-        if lang == "es":
-            reply = f"El médico principal en {clinic_name} es {doctor_name}, especialista en {specialty} en {city}."
-        else:
-            reply = f"Our primary physician at {clinic_name} is {doctor_name}, specializing in {specialty} here in {city}."
-
-    # Intent 3: Hours / Openings / Availability
-    elif any(w in lower for w in ["hours", "open", "timing", "time", "close", "days"]):
-        if lang == "es":
-            reply = f"Nuestra clínica está abierta de Lunes a Viernes de 8:00 AM a 5:00 PM. ¿Le gustaría reservar un espacio?"
-        else:
-            reply = f"{clinic_name} is open Monday through Friday, 8:00 AM to 5:00 PM. Would you like to schedule a consultation?"
-
-    # Intent 4: Insurance / Cost / Billing
-    elif any(w in lower for w in ["insurance", "cost", "fee", "price", "cover", "medicare", "ppo"]):
-        if lang == "es":
-            reply = f"Aceptamos los principales seguros PPO, Medicare y planes privados. Además, tramitamos autorizaciones previas automáticamente."
-        else:
-            reply = f"We accept all major PPO networks, Medicare, and private pay. Our system also handles prior authorizations autonomously. Would you like to schedule an initial visit?"
-
-    # Intent 5: Greeting or general
+    # Intelligent LLM Conversational Voice Receptionist via AIService
     else:
-        if lang == "es":
-            reply = f"Gracias por llamar a {clinic_name}. Mi nombre es {agent_name}. Puedo coordinar su cita con {doctor_name}, resolver dudas o registrar su consulta. ¿En qué le ayudo?"
-        else:
-            reply = f"Thank you for contacting {clinic_name}! My name is {agent_name}. I can schedule your visit with {doctor_name}, answer clinic questions, or verify insurance. How may I help you today?"
+        try:
+            from src.services.ai_service import AIService
+            ai_service = AIService()
+            system_prompt = (
+                f"You are {agent_name}, the autonomous voice AI medical receptionist for {clinic_name} in {city}. "
+                f"The primary clinician is {doctor_name} ({specialty}). "
+                f"The clinic is open Monday through Friday 8:00 AM to 5:00 PM, and Saturday 9:00 AM to 1:00 PM. "
+                f"We accept Blue Cross Blue Shield, Medicare, and private pay. "
+                f"Respond naturally, warmly, and concisely (under 2 sentences) as if speaking live on a phone call. "
+                f"If the caller introduces their name, acknowledge them warmly by name and ask how you can assist them. "
+                f"If they ask if you can hear them, confirm clearly that you can hear them loud and clear. "
+                f"Answer in Spanish if the user's language is Spanish, otherwise English."
+            )
+            llm_reply = await ai_service.chat([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_msg}
+            ], max_tokens=150, temperature=0.5)
+
+            if llm_reply and len(llm_reply.strip()) > 3:
+                reply = llm_reply.strip()
+            else:
+                raise ValueError("Empty LLM reply")
+        except Exception as e:
+            log.warning(f"[voice_chat] AIService conversational error: {e}")
+            if lang == "es":
+                reply = f"Gracias por llamar a {clinic_name}. Mi nombre es {agent_name}. Puedo coordinar su cita con {doctor_name}, resolver dudas o registrar su consulta. ¿En qué le ayudo?"
+            else:
+                reply = f"Thank you for contacting {clinic_name}! My name is {agent_name}. I can schedule your visit with {doctor_name}, answer clinic questions, or verify insurance. How may I help you today?"
 
     return {
         "reply": reply,
