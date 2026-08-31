@@ -19,6 +19,7 @@ from .routers.agency_router import router as agency_router
 from .routers.agent_config_router import router as agent_config_router
 from .webhooks.twilio_webhook import router as twilio_webhook
 from .routers.ehr_router import router as ehr_router
+from .routers.integrations_router import router as integrations_router
 from .webhooks.telnyx_webhook import router as telnyx_webhook
 from .webhooks.retell_webhook import router as retell_webhook
 from .routers.security_router import router as security_router
