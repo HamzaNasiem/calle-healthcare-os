@@ -408,10 +408,18 @@ class CalleService:
             self._sync_create_and_wait, task, phone, CONFIRMATION_SCHEMA, idempotency_key, region
         )
 
+    def _build_noshow_script(self, patient_name: str, appt_time: str, clinic_name: str) -> str:
+        return (
+            f"Hello {patient_name}, this is CALL-E calling from {clinic_name}. "
+            f"We missed you for your {appt_time} appointment today. Is everything alright? "
+            f"We would love to reschedule you at no cancellation fee."
+        )
+
     async def no_show_recovery_call(
         self,
         phone: str,
         clinic_name: str,
+        patient_name: str,
         time_str: str,
         idempotency_key: str,
         webhook_url: Optional[str] = None,
@@ -425,13 +433,7 @@ class CalleService:
         if self.is_dry_run():
             return self._mock_noshow(idempotency_key)
 
-        task = (
-            f"You are calling on behalf of {clinic_name}. "
-            f"The patient had an appointment today at {time_str} but was unable to make it. "
-            f"Express genuine concern for their wellbeing. Ask if everything is okay. "
-            f"Offer to reschedule their visit for later this week at their earliest convenience. "
-            f"If they had an emergency, acknowledge it with empathy and mark for clinic follow-up."
-        )
+        task = self._build_noshow_script(patient_name, time_str, clinic_name)
         if webhook_url and not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,

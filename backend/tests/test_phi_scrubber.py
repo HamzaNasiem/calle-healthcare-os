@@ -7,13 +7,18 @@ def test_scrub_phi():
     assert scrub_phi("My email is john.doe@example.com") == "My email is [REDACTED_EMAIL]"
     
     # Test USA Phone Number redaction (various formats)
-    assert scrub_phi("Call me at 555-123-4567") == "Call me at [REDACTED_PHONE]"
-    assert scrub_phi("Call me at (555) 123-4567") == "Call me at [REDACTED_PHONE]"
-    assert scrub_phi("Call me at +1 555-123-4567") == "Call me at [REDACTED_PHONE]"
+    assert scrub_phi("Call me at 555-123-4567") == "Call me at +1***4567"
+    assert scrub_phi("Call me at (555) 123-4567") == "Call me at +1***4567"
+    assert scrub_phi("Call me at +1 555-123-4567") == "Call me at +1***4567"
+    assert scrub_phi("+14155552671") == "+1***2671"
     
     # Test DOB redaction
     assert scrub_phi("Born on 1990-05-15") == "Born on [REDACTED_DOB]"
     assert scrub_phi("DOB is 05/15/1990") == "DOB is [REDACTED_DOB]"
+
+    # Test Name redaction
+    assert scrub_phi("Hamza Nasiem") == "H*** N***"
+    assert scrub_phi("Patient John Doe has") == "Patient J*** D*** has"
 
 def test_phi_scrubber_filter(capsys):
     # Setup a local logger with the scrubber filter
@@ -36,10 +41,12 @@ def test_phi_scrubber_filter(capsys):
     assert "test@example.com" not in output
     assert "(123) 456-7890" not in output
     assert "1985-12-01" not in output
+    assert "John Doe" not in output
     
     assert "[REDACTED_EMAIL]" in output
-    assert "[REDACTED_PHONE]" in output
+    assert "+1***7890" in output
     assert "[REDACTED_DOB]" in output
+    assert "J*** D***" in output
     
     # Clean up handler
     test_logger.removeHandler(handler)

@@ -5,6 +5,35 @@ from ..core.database import supabase
 from ..core.config import settings
 from .voice_service import voice_service
 
+def _days_since_last_visit(patient: dict) -> int:
+    last_visit = patient.get("last_visit_date")
+    if not last_visit:
+        return 0
+    if isinstance(last_visit, str):
+        # Extract just the date part if it's ISO format
+        last_visit = datetime.datetime.strptime(last_visit[:10], "%Y-%m-%d").date()
+    elif isinstance(last_visit, datetime.datetime):
+        last_visit = last_visit.date()
+    delta = datetime.date.today() - last_visit
+    return delta.days
+
+def _get_recall_bucket(days: int) -> str | None:
+    if 25 <= days <= 35:
+        return "30d"
+    elif 55 <= days <= 65:
+        return "60d"
+    elif 85 <= days <= 95:
+        return "90d"
+    return None
+
+def _build_recall_script(patient_name: str, days_overdue: int, doctor_name: str) -> str:
+    return (
+        f"Hello {patient_name}, this is CALL-E from Oakridge Physical Therapy. "
+        f"It has been a while since your last visit. "
+        f"{doctor_name} wanted to check in and see how you are doing. "
+        f"Would you like to schedule a follow-up assessment?"
+    )
+
 class RecallService:
     async def get_recall_candidates(self, clinic_id: str) -> Dict[str, Any]:
         try:

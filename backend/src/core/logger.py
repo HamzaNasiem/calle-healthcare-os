@@ -15,15 +15,33 @@ EMAIL_REGEX = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
 PHONE_REGEX = re.compile(r'(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}')
 DOB_REGEX = re.compile(r'\b(19|20)\d{2}[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b|\b(0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])[-/](19|20)?\d{2}\b')
 
+# We also need a name redactor. For simplicity, any First Last name pattern.
+NAME_REGEX = re.compile(r'\b([A-Z][a-z]+)\s([A-Z][a-z]+)\b')
+
 def scrub_phi(text: str) -> str:
     if not isinstance(text, str):
         return text
     # Redact Email
     text = EMAIL_REGEX.sub("[REDACTED_EMAIL]", text)
-    # Redact Phone
-    text = PHONE_REGEX.sub("[REDACTED_PHONE]", text)
+    
+    # Redact Phone: e.g. +14155552671 -> +1***2671
+    def mask_phone(match):
+        digits = re.sub(r'\D', '', match.group(0))
+        if len(digits) >= 10:
+            return f"+1***{digits[-4:]}"
+        return "[REDACTED_PHONE]"
+    text = PHONE_REGEX.sub(mask_phone, text)
+    
     # Redact DOB
     text = DOB_REGEX.sub("[REDACTED_DOB]", text)
+    
+    # Redact Name: Hamza Nasiem -> H*** N***
+    def mask_name(match):
+        first = match.group(1)
+        last = match.group(2)
+        return f"{first[0]}*** {last[0]}***"
+    text = NAME_REGEX.sub(mask_name, text)
+    
     return text
 
 class CorrelationIdFilter(logging.Filter):

@@ -684,6 +684,7 @@ async def trigger_single_call(
         result = await calle_service.no_show_recovery_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
+            patient_name=body.patient_name or "Valued Patient",
             time_str=time_str or "today's appointment time",
             idempotency_key=idem_key,
             webhook_url=webhook_url,
@@ -868,6 +869,18 @@ async def run_confirmation_campaign(
 
     async def _run_batch():
         for appt in appointments:
+            if appt.get("patient_id"):
+                try:
+                    p_res = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda pid=appt["patient_id"]: supabase_read.table("patients").select("recall_opted_out").eq("id", pid).execute()
+                    )
+                    if p_res.data and p_res.data[0].get("recall_opted_out"):
+                        log.info(f"Skipping TCPA opted out patient: {appt['patient_id']}")
+                        continue
+                except Exception as ex:
+                    log.warning(f"Failed to check recall_opted_out for patient {appt.get('patient_id')}: {ex}")
+
             phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
             if not phone:
                 continue
@@ -1020,41 +1033,43 @@ async def run_recall_campaign(
         clinic_name = "Your Clinic"
 
     cutoff_date = (datetime.now(timezone.utc) - timedelta(days=body.days_threshold)).date()
-    cutoff_start = f"{cutoff_date - timedelta(days=7)}T00:00:00"
-    cutoff_end = f"{cutoff_date}T23:59:59"
+    # We want patients overdue by ~days_threshold. To allow a window, say last_visit_date <= cutoff_date
+    cutoff_end_str = cutoff_date.strftime("%Y-%m-%d")
 
     try:
         res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("appointments")
-                .select("id, patient_id, patient_phone, patient_name, datetime")
+            lambda: supabase_read.table("patients")
+                .select("id, name, phone")
                 .eq("clinic_id", clinic_id)
-                .eq("status", "completed")
-                .gte("datetime", cutoff_start)
-                .lte("datetime", cutoff_end)
+                .lte("last_visit_date", cutoff_end_str)
+                .eq("recall_opted_out", False)
                 .limit(body.limit)
                 .execute()
         )
-        appointments = res.data or []
+        patients = res.data or []
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch recall patients: {exc}")
 
-    if not appointments:
+    if not patients:
         return {"message": f"No patients found for {body.days_threshold}-day recall.", "queued": 0}
 
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL else None
 
     async def _run_batch():
-        for appt in appointments:
-            phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+        for pat in patients:
+            phone = pat.get("phone")
+            patient_name = pat.get("name")
             if not phone:
                 continue
-            idem_key = _build_idempotency_key(f"recall_{body.days_threshold}d", clinic_id, appt["id"])
+            idem_key = _build_idempotency_key(f"recall_{body.days_threshold}d", clinic_id, pat["id"])
 
+            # Assuming recall_call signature doesn't take patient_name anymore, or if it does, keep it.
+            # wait, the signature in calle_service.py for recall_call doesn't take patient_name actually in the file we saw!
+            # Let's pass what's needed. Wait, in `calle_service.py`, `recall_call` does NOT have `patient_name` parameter!
             result = await calle_service.recall_call(
                 phone=phone,
                 clinic_name=clinic_name,
-                patient_name=patient_name,
                 days_since_last_visit=body.days_threshold,
                 recall_type=body.recall_type,
                 idempotency_key=idem_key,
@@ -1064,8 +1079,8 @@ async def run_recall_campaign(
                 clinic_id=clinic_id,
                 campaign_type="recall",
                 result=result,
-                appointment_id=appt["id"],
-                patient_id=appt.get("patient_id"),
+                appointment_id=None,
+                patient_id=pat["id"],
                 idempotency_key=idem_key,
             )
             await asyncio.sleep(1.5)

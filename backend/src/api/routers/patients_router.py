@@ -65,7 +65,8 @@ async def get_patients(
     page: Optional[int] = Query(None, ge=1),
     limit: int = Query(50, ge=1, le=500),
     cursor: Optional[str] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    recall_filter: Optional[str] = Query(None)
 ):
     clinic_id = auth.clinic_id
     
@@ -77,6 +78,10 @@ async def get_patients(
     if search:
         search_term = search.strip()
         query = query.or_(f"name.ilike.%{search_term}%,phone.ilike.%{search_term}%,insurance_member_id.ilike.%{search_term}%")
+        
+    if recall_filter == "due":
+        thirty_days_ago = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+        query = query.lte("last_visit_date", thirty_days_ago).eq("recall_opted_out", False)
         
     if cursor:
         query = query.lt("created_at", cursor).limit(limit)

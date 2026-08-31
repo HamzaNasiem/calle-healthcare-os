@@ -135,7 +135,7 @@ async def test_competitor_benchmarking_api(client):
     mock_others_res = MagicMock()
     mock_others_res.data = []
 
-    with patch("src.api.routers.analytics_router.supabase_read") as mock_supabase:
+    with patch("src.services.analytics_service.supabase_read") as mock_supabase:
         def table_selector(table_name):
             mock_table = MagicMock()
             if table_name == "clinics":

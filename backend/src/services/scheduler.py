@@ -63,8 +63,9 @@ async def job_calle_confirmation_calls():
     Runs daily to confirm unconfirmed appointments.
     """
     now = datetime.now(UTC)
-    window_start = (now + timedelta(hours=23)).isoformat()
-    window_end = (now + timedelta(hours=25)).isoformat()
+    tomorrow = (now + timedelta(days=1)).date()
+    window_start = f"{tomorrow}T00:00:00+00:00"
+    window_end = f"{tomorrow}T23:59:59+00:00"
 
     try:
         res = supabase_read.table("appointments").select(
@@ -82,17 +83,19 @@ async def job_calle_confirmation_calls():
             clinic_id = apt.get("clinic_id") or "d3b07384-d113-46a6-a719-38cf89235d54"
             clinic_res = supabase_read.table("clinics").select("name, timezone").eq("id", clinic_id).execute()
             clinic_info = clinic_res.data[0] if clinic_res.data else {}
-            
-            tz_name = clinic_info.get("timezone") or "America/Chicago"
-            try:
-                tz = zoneinfo.ZoneInfo(tz_name)
-            except Exception:
-                tz = zoneinfo.ZoneInfo("America/Chicago")
-            local_now = now.astimezone(tz)
-
-            if not (8 <= local_now.hour < 20):
-                log.info(f"[CALL-E Confirmation] Skipping apt {apt['id']}, outside 8am-8pm window")
+            if not (8 <= now.hour < 18):
+                log.info(f"[CALL-E Confirmation] Skipping apt {apt['id']}, outside 8am-6pm UTC window")
                 continue
+
+            # TCPA check
+            if apt.get("patient_id"):
+                try:
+                    p_res = supabase_read.table("patients").select("recall_opted_out").eq("id", apt["patient_id"]).execute()
+                    if p_res.data and p_res.data[0].get("recall_opted_out"):
+                        log.info(f"Skipping TCPA opted out patient: {apt['patient_id']}")
+                        continue
+                except Exception as ex:
+                    log.warning(f"Failed TCPA check: {ex}")
 
             idempotency_key = f"CALL_CONFIRMATION_{apt['id']}_{now.date().isoformat()}"
             existing = supabase_read.table("outbound_calls").select("id").eq("idempotency_key", idempotency_key).execute()
@@ -148,16 +151,16 @@ async def job_calle_confirmation_calls():
 
 async def job_calle_noshow_recovery():
     """
-    Automated CALL-E Outbound No-Show Recovery Calls (15-30m after missed appointment).
+    Automated CALL-E Outbound No-Show Recovery Calls (2 hours after missed appointment).
     """
     now = datetime.now(UTC)
-    cutoff_start = (now - timedelta(minutes=30)).isoformat()
-    cutoff_end = (now - timedelta(minutes=15)).isoformat()
+    cutoff = (now - timedelta(hours=2)).isoformat()
+    today = now.date().isoformat()
 
     try:
         res = supabase_read.table("appointments").select(
             "id, clinic_id, patient_id, patient_name, patient_phone, datetime, status"
-        ).eq("status", "scheduled").gte("datetime", cutoff_start).lte("datetime", cutoff_end).execute()
+        ).eq("status", "no_show").lte("datetime", cutoff).gte("datetime", f"{today}T00:00:00").execute()
 
         appts = res.data or []
         for apt in appts:
@@ -194,6 +197,7 @@ async def job_calle_noshow_recovery():
                 result = await calle_service.no_show_recovery_call(
                     phone=phone,
                     clinic_name=clinic_name,
+                    patient_name=apt.get("patient_name") or "Valued Patient",
                     time_str=time_str,
                     idempotency_key=idempotency_key
                 )
@@ -334,8 +338,8 @@ def start_scheduler():
     if not scheduler.running:
         # 1. Check for reminders every 15 minutes
         scheduler.add_job(job_24h_reminders, 'interval', minutes=15, id='reminders_15m', replace_existing=True)
-        # 2. CALL-E 24h confirmation calls daily at 8am
-        scheduler.add_job(job_calle_confirmation_calls, 'cron', hour=8, minute=0, id='calle_confirmation_daily', replace_existing=True)
+        # 2. CALL-E 24h confirmation calls every 30 minutes between 8am-6pm UTC
+        scheduler.add_job(job_calle_confirmation_calls, 'cron', hour='8-17', minute='0,30', id='calle_confirmation_daily', replace_existing=True)
         # 3. CALL-E No-Show recovery calls every 5 minutes
         scheduler.add_job(job_calle_noshow_recovery, 'interval', minutes=5, id='calle_noshow_recovery', replace_existing=True)
         # 4. CALL-E Pre-appointment prep calls every 30 minutes
