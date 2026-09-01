@@ -291,6 +291,16 @@ async def root():
     return {"message": "Welcome to Bytelytic OS API", "status": "online"}
 
 
+@app.get("/ping")
+@app.head("/ping")
+@app.get("/healthz")
+@app.head("/healthz")
+async def ping():
+    """Ultra-lightweight keep-alive endpoint for cron-job.org (2 bytes, zero overhead)."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("OK", status_code=200)
+
+
 @app.get("/health")
 async def health():
     return {
