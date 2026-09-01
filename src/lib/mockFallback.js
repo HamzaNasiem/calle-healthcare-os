@@ -300,7 +300,31 @@ export function handleMockRoute(url, method = "get", data = null) {
     };
   }
 
-  if (cleanUrl.includes("/analytics/patients") || cleanUrl.includes("/analytics/no-shows") || cleanUrl.includes("/analytics/campaigns") || cleanUrl.includes("/analytics/roi")) {
+  if (cleanUrl.includes("/analytics/campaigns") || cleanUrl.includes("/analytics/campaign-comparison")) {
+    return {
+      success: true,
+      data: {
+        campaigns: {
+          confirmation: { campaign_type: "confirmation", title: "Appointment Confirmations", total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 },
+          no_show: { campaign_type: "no_show", title: "No-Show Recovery", total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 },
+          recall: { campaign_type: "recall", title: "Overdue Patient Recalls", total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 },
+          survey: { campaign_type: "survey", title: "Post-Visit Satisfaction", total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 },
+          waitlist: { campaign_type: "waitlist", title: "Instant Waitlist Backfill", total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 }
+        },
+        comparison_chart: [
+          { campaign: "Confirmations", full_title: "Appointment Confirmations", initiated: 0, reached: 0, converted: 0, conversion_rate: 0, reached_rate: 0, revenue: 0 },
+          { campaign: "No-Show", full_title: "No-Show Recovery", initiated: 0, reached: 0, converted: 0, conversion_rate: 0, reached_rate: 0, revenue: 0 },
+          { campaign: "Recalls", full_title: "Overdue Patient Recalls", initiated: 0, reached: 0, converted: 0, conversion_rate: 0, reached_rate: 0, revenue: 0 },
+          { campaign: "Surveys", full_title: "Post-Visit Satisfaction", initiated: 0, reached: 0, converted: 0, conversion_rate: 0, reached_rate: 0, revenue: 0 },
+          { campaign: "Waitlist", full_title: "Instant Waitlist Backfill", initiated: 0, reached: 0, converted: 0, conversion_rate: 0, reached_rate: 0, revenue: 0 }
+        ],
+        total_campaign_revenue: 0,
+        total_campaign_conversions: 0
+      }
+    };
+  }
+
+  if (cleanUrl.includes("/analytics/patients") || cleanUrl.includes("/analytics/no-shows") || cleanUrl.includes("/analytics/roi")) {
     return { success: true, data: { no_show_rate: 4.8, baseline_rate: 18.0, reduction_pct: 73.3, annual_savings: 42800 } };
   }
 

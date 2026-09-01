@@ -7,7 +7,7 @@ import {
   TrendingUp, Phone, Users, Calendar, AlertCircle, FileSpreadsheet, 
   Sparkles, CheckCircle2, ChevronRight, Loader2, ArrowUpRight, ArrowDownRight, ShieldAlert,
   HelpCircle, Search, Mail, Calculator, Clock, Activity, DollarSign, Award,
-  Download, Check, SlidersHorizontal, BarChart3
+  Download, Check, SlidersHorizontal, BarChart3, ShieldCheck, Zap
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -99,16 +99,29 @@ export default function Analytics() {
     show_rate: 100,
     no_show_count: 0,
     attended_count: 0,
+    completed_count: 0,
+    scheduled_count: 0,
+    concluded_appointments: 0,
     total_appointments: 0,
+    lost_revenue: 0,
+    avg_visit_value: 150,
+    recovered_revenue: 0,
+    recovery_dispatched_count: 0,
+    recovery_converted_count: 0,
+    recovery_conversion_rate: 0,
     prev_no_show_rate: 18.0,
     no_show_reduction_rate: 0,
     benchmark_baseline: 18.0,
     benchmark_savings_rate: 0,
     confirmed_show_rate: 95.0,
     unconfirmed_show_rate: 78.0,
+    confirmed_lift_rate: 17.0,
     confirmation_count: 0,
     top_offenders: []
   });
+
+  const [runningNoshowCampaign, setRunningNoshowCampaign] = useState(false);
+  const [noshowCampaignFeedback, setNoshowCampaignFeedback] = useState(null);
 
   const [suggestionsData, setSuggestionsData] = useState({
     latest_ai_insights: null,
@@ -268,6 +281,28 @@ export default function Analytics() {
       alert("Failed to export analytics report. Please try again.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleTriggerNoshowCampaign = async () => {
+    setRunningNoshowCampaign(true);
+    setNoshowCampaignFeedback(null);
+    try {
+      const res = await api.post("/calle/campaigns/no-show");
+      setNoshowCampaignFeedback({
+        type: "success",
+        text: res.data?.message || `Successfully queued ${res.data?.queued || 0} no-show recovery calls!`
+      });
+      fetchData();
+      setTimeout(() => setNoshowCampaignFeedback(null), 5000);
+    } catch (err) {
+      setNoshowCampaignFeedback({
+        type: "error",
+        text: err.response?.data?.detail || "Failed to trigger CALL-E recovery campaign."
+      });
+      setTimeout(() => setNoshowCampaignFeedback(null), 5000);
+    } finally {
+      setRunningNoshowCampaign(false);
     }
   };
 
@@ -881,28 +916,33 @@ export default function Analytics() {
           {activeTab === "campaigns" && (
             <div className="space-y-6 animate-in fade-in duration-200">
               {/* Campaign Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {[
                   { key: "confirmation", title: "Confirmations", stat: campaignsData.campaigns?.confirmation, color: "#396a00" },
                   { key: "no_show", title: "No-Show Recovery", stat: campaignsData.campaigns?.no_show, color: "#b71c1c" },
                   { key: "recall", title: "Overdue Recalls", stat: campaignsData.campaigns?.recall, color: "#1565c0" },
-                  { key: "survey", title: "Patient Feedback", stat: campaignsData.campaigns?.survey, color: "#6a1b9a" }
+                  { key: "survey", title: "Patient Feedback", stat: campaignsData.campaigns?.survey, color: "#6a1b9a" },
+                  { key: "waitlist", title: "Waitlist Backfill", stat: campaignsData.campaigns?.waitlist, color: "#00838f" }
                 ].map((c) => {
-                  const data = c.stat || { total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, revenue_recovered: 0 };
+                  const data = c.stat || { total_initiated: 0, reached_count: 0, converted_count: 0, conversion_rate: 0, reached_rate: 0, revenue_recovered: 0 };
                   return (
-                    <div key={c.key} className="card p-5 bg-white border border-[#e7e9dd] flex flex-col justify-between space-y-4">
+                    <div key={c.key} className="card p-4 bg-white border border-[#e7e9dd] flex flex-col justify-between space-y-3">
                       <div>
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant">{c.title}</span>
-                          <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-[#f1f4ed] text-on-surface">
+                          <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded bg-[#f1f4ed] text-on-surface">
                             {data.total_initiated} calls
                           </span>
                         </div>
-                        <p className="text-2xl font-black text-on-surface mt-2">{data.converted_count} Converted</p>
-                        <p className="text-[10px] text-green-700 font-bold">{data.conversion_rate}% conversion rate</p>
+                        <p className="text-xl font-black text-on-surface mt-2">{data.converted_count} Converted</p>
+                        <div className="flex items-center gap-1.5 mt-0.5 text-[10px]">
+                          <span className="text-green-700 font-bold">{data.conversion_rate}% conversion</span>
+                          <span className="text-on-surface-variant">•</span>
+                          <span className="text-on-surface-variant font-medium">{data.reached_count} reached</span>
+                        </div>
                       </div>
 
-                      <div className="border-t border-[#f1f4ed] pt-3 flex justify-between items-center text-xs">
+                      <div className="border-t border-[#f1f4ed] pt-2.5 flex justify-between items-center text-xs">
                         <span className="text-on-surface-variant font-semibold">Value Generated</span>
                         <span className="font-bold text-[#396a00] font-mono">{formatCurrency(data.revenue_recovered)}</span>
                       </div>
@@ -917,11 +957,12 @@ export default function Analytics() {
                   <div>
                     <h3 className="text-sm font-bold text-on-surface">Side-by-Side Campaign Conversion Comparison</h3>
                     <p className="text-[11px] text-on-surface-variant font-medium">
-                      Comparing outreach volume vs successful conversion goals across all 4 voice AI workflows.
+                      Comparing outreach volume vs successful conversion goals across all 5 voice AI workflows.
                     </p>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-bold">
-                    <span className="flex items-center gap-1.5 text-[#42493a]"><span className="w-3 h-3 bg-[#e2e7dc] rounded" /> Reached</span>
+                    <span className="flex items-center gap-1.5 text-[#42493a]"><span className="w-3 h-3 bg-[#e2e7dc] rounded" /> Initiated</span>
+                    <span className="flex items-center gap-1.5 text-[#42493a]"><span className="w-3 h-3 bg-[#c8d6b9] rounded" /> Reached</span>
                     <span className="flex items-center gap-1.5 text-[#396a00]"><span className="w-3 h-3 bg-[#396a00] rounded" /> Converted</span>
                   </div>
                 </div>
@@ -936,6 +977,7 @@ export default function Analytics() {
                         formatter={(v, name) => [v, name === "converted" ? "Goals Converted" : name === "reached" ? "Patients Reached" : "Calls Initiated"]}
                         contentStyle={{ borderRadius: "10px", border: "1px solid #e7e9dd" }}
                       />
+                      <Bar dataKey="initiated" fill="#e2e7dc" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="reached" fill="#c8d6b9" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="converted" fill="#396a00" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -1095,18 +1137,32 @@ export default function Analytics() {
              ═══════════════════════════════════════════════════════════ */}
           {activeTab === "no-shows" && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              {/* Top KPI Cards for No-Show Analysis */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* Top 6 KPI Cards for No-Show & Show Rate Analysis */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <div className="card p-5 bg-white border border-[#e7e9dd] space-y-1">
-                  <span className="overline text-[#396a00]">Current No-Show Rate</span>
+                  <span className="overline text-[#396a00]">Practice Show Rate</span>
+                  <p className="text-3xl font-black text-[#2e7d32]">{noshowsData.show_rate}%</p>
+                  <p className="text-[10px] text-on-surface-variant font-semibold">
+                    {noshowsData.completed_count ?? noshowsData.attended_count ?? 0} attended of {noshowsData.concluded_appointments || ((noshowsData.completed_count || 0) + (noshowsData.no_show_count || 0)) || noshowsData.total_appointments} concluded
+                  </p>
+                </div>
+
+                <div className="card p-5 bg-white border border-[#e7e9dd] space-y-1">
+                  <span className="overline text-[#b71c1c]">Current No-Show Rate</span>
                   <p className="text-3xl font-black text-on-surface">{noshowsData.no_show_rate}%</p>
-                  <p className="text-[10px] text-on-surface-variant font-semibold">{noshowsData.no_show_count} of {noshowsData.total_appointments} appointments</p>
+                  <p className="text-[10px] text-on-surface-variant font-semibold">{noshowsData.no_show_count} unexcused missed visits</p>
+                </div>
+
+                <div className="card p-5 bg-white border border-[#e7e9dd] space-y-1">
+                  <span className="overline text-[#b71c1c]">Estimated Lost Revenue</span>
+                  <p className="text-3xl font-black text-red-700">{formatCurrency(noshowsData.lost_revenue || (noshowsData.no_show_count * (noshowsData.avg_visit_value || 150)))}</p>
+                  <p className="text-[10px] text-on-surface-variant font-semibold">{noshowsData.no_show_count} missed @ avg {formatCurrency(noshowsData.avg_visit_value || 150)}/visit</p>
                 </div>
 
                 <div className="card p-5 bg-[#edf7e0] border border-[#d2e7c4] space-y-1">
-                  <span className="overline text-[#396a00]">No-Show Reduction Rate</span>
-                  <p className="text-3xl font-black text-[#2e7d32]">+{noshowsData.no_show_reduction_rate}%</p>
-                  <p className="text-[10px] text-green-800 font-bold">Improvement vs prior period baseline</p>
+                  <span className="overline text-[#396a00]">CALL-E Recovered Revenue</span>
+                  <p className="text-3xl font-black text-[#2e7d32]">+{formatCurrency(noshowsData.recovered_revenue || 0)}</p>
+                  <p className="text-[10px] text-green-800 font-bold">{noshowsData.recovery_converted_count || 0} rebooked via 2h campaign</p>
                 </div>
 
                 <div className="card p-5 bg-white border border-[#e7e9dd] space-y-1">
@@ -1115,7 +1171,9 @@ export default function Analytics() {
                     <span className="text-2xl font-black text-[#2e7d32]">{noshowsData.confirmed_show_rate}%</span>
                     <span className="text-xs text-on-surface-variant font-bold">vs {noshowsData.unconfirmed_show_rate}%</span>
                   </div>
-                  <p className="text-[10px] text-green-700 font-bold">+17% lift via CALL-E confirmations</p>
+                  <p className="text-[10px] text-green-700 font-bold">
+                    +{(noshowsData.confirmed_lift_rate ?? (noshowsData.confirmed_show_rate - noshowsData.unconfirmed_show_rate)).toFixed(1)}% lift via confirmations
+                  </p>
                 </div>
 
                 <div className="card p-5 bg-white border border-[#e7e9dd] space-y-1">
@@ -1125,16 +1183,86 @@ export default function Analytics() {
                 </div>
               </div>
 
+              {/* CALL-E 2-Hour Autonomous No-Show Recovery Engine Control Banner */}
+              <div className="card p-6 bg-gradient-to-r from-emerald-50 via-white to-green-50/40 border border-[#cbe4b8] space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-[#396a00]" />
+                      <h3 className="text-sm font-extrabold text-on-surface">CALL-E 2-Hour Autonomous No-Show Recovery Engine</h3>
+                      <span className="text-[10px] uppercase font-bold bg-[#396a00] text-white px-2 py-0.5 rounded-full">Automated Bot</span>
+                    </div>
+                    <p className="text-xs text-on-surface-variant max-w-2xl leading-relaxed">
+                      CALL-E automatically contacts patients 2 hours after an unexcused missed appointment to express care and immediately offer rebooking before the schedule slot is permanently lost.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleTriggerNoshowCampaign}
+                    disabled={runningNoshowCampaign}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-[#396a00] hover:bg-[#2e5500] text-white font-bold text-xs rounded-xl shadow transition-all disabled:opacity-50 shrink-0"
+                  >
+                    {runningNoshowCampaign ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Dispatching CALL-E Calls...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="w-4 h-4" />
+                        <span>Run 2h Recovery Campaign Now</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {noshowCampaignFeedback && (
+                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    noshowCampaignFeedback.type === "success" 
+                      ? "bg-green-100 text-green-800 border border-green-200" 
+                      : "bg-red-100 text-red-800 border border-red-200"
+                  }`}>
+                    {noshowCampaignFeedback.type === "success" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                    <span>{noshowCampaignFeedback.text}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-[#e2edd7]">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-on-surface-variant">2h Calls Dispatched</span>
+                    <p className="text-lg font-black text-on-surface">{noshowsData.recovery_dispatched_count || 0}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-on-surface-variant">Successfully Rebooked</span>
+                    <p className="text-lg font-black text-[#2e7d32]">{noshowsData.recovery_converted_count || 0}</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-on-surface-variant">Rebooking Recovery Rate</span>
+                    <p className="text-lg font-black text-on-surface">{noshowsData.recovery_conversion_rate || 0}%</p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-on-surface-variant">Total Value Rescued</span>
+                    <p className="text-lg font-black text-[#2e7d32]">+{formatCurrency(noshowsData.recovered_revenue || 0)}</p>
+                  </div>
+                </div>
+              </div>
+
               {/* No-Show Rate & Show Rate Trend Line Chart */}
               <div className="card p-6 bg-white border border-[#e7e9dd]">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
                   <div>
                     <h3 className="text-sm font-bold text-on-surface">Daily Attendance & No-Show Rate Trend</h3>
-                    <p className="text-[11px] text-on-surface-variant font-medium">Tracking day-by-day show rates against national benchmark line.</p>
+                    <p className="text-[11px] text-on-surface-variant font-medium">Tracking day-by-day show rates and no-show percentages against national benchmark line.</p>
                   </div>
-                  <div className="flex items-center gap-3 text-xs font-bold">
-                    <span className="flex items-center gap-1 text-[#b71c1c]"><span className="w-2.5 h-2.5 bg-[#b71c1c] rounded-full" /> No-Show Rate</span>
-                    <span className="flex items-center gap-1 text-amber-600"><span className="w-4 h-0.5 bg-amber-500 border-t border-dashed" /> 18% Benchmark</span>
+                  <div className="flex items-center gap-4 text-xs font-bold">
+                    <span className="flex items-center gap-1.5 text-[#2e7d32]">
+                      <span className="w-2.5 h-2.5 bg-[#2e7d32] rounded-full" /> Show Rate %
+                    </span>
+                    <span className="flex items-center gap-1.5 text-[#b71c1c]">
+                      <span className="w-2.5 h-2.5 bg-[#b71c1c] rounded-full" /> No-Show Rate %
+                    </span>
+                    <span className="flex items-center gap-1.5 text-amber-600">
+                      <span className="w-4 h-0.5 bg-amber-500 border-t border-dashed" /> 18% Nat'l Benchmark
+                    </span>
                   </div>
                 </div>
                 
@@ -1142,13 +1270,32 @@ export default function Analytics() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={noshowsData.trend || []}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f4ed" />
-                      <XAxis dataKey="date" tickLine={false} tick={{ fill: "#42493a", fontSize: 10, fontWeight: 700 }} />
-                      <YAxis tickFormatter={(v) => `${v}%`} tickLine={false} tick={{ fill: "#42493a", fontSize: 10 }} domain={[0, 50]} />
-                      <Tooltip formatter={(v) => [`${v}%`, "No-Show Rate"]} contentStyle={{ borderRadius: "10px", border: "1px solid #e7e9dd" }} />
-                      <ReferenceLine y={18} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "National Benchmark (18%)", fill: "#d97706", fontSize: 10, position: "top" }} />
+                      <XAxis 
+                        dataKey="date" 
+                        tickFormatter={(d) => d ? d.slice(5) : ""}
+                        tickLine={false} 
+                        tick={{ fill: "#42493a", fontSize: 10, fontWeight: 700 }} 
+                      />
+                      <YAxis tickFormatter={(v) => `${v}%`} tickLine={false} tick={{ fill: "#42493a", fontSize: 10 }} domain={[0, 100]} />
+                      <Tooltip 
+                        formatter={(v, name) => [`${v}%`, name === "show_rate" ? "Show Rate" : "No-Show Rate"]} 
+                        contentStyle={{ borderRadius: "10px", border: "1px solid #e7e9dd" }} 
+                      />
+                      <ReferenceLine y={18} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "Benchmark (18%)", fill: "#d97706", fontSize: 10, position: "top" }} />
+                      <Line 
+                        type="monotone" 
+                        dataKey="show_rate" 
+                        name="show_rate"
+                        stroke="#2e7d32" 
+                        strokeWidth={2.5} 
+                        dot={{ r: 3, fill: "#2e7d32" }} 
+                        activeDot={{ r: 6 }} 
+                        connectNulls={true}
+                      />
                       <Line 
                         type="monotone" 
                         dataKey="no_show_rate" 
+                        name="no_show_rate"
                         stroke="#b71c1c" 
                         strokeWidth={2.5} 
                         dot={{ r: 3, fill: "#b71c1c" }} 
@@ -1161,27 +1308,42 @@ export default function Analytics() {
 
               {/* Repeat Offenders Table */}
               <div className="card p-6 bg-white border border-[#e7e9dd] space-y-4">
-                <div>
-                  <h3 className="text-sm font-bold text-on-surface">Repeat No-Show Offenders Watchlist</h3>
-                  <p className="text-[11px] text-on-surface-variant font-medium">Patients with repeat unexcused absences. Recommended for mandatory deposit policy or phone triage.</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-on-surface">Repeat No-Show Offenders Watchlist</h3>
+                    <p className="text-[11px] text-on-surface-variant font-medium">Patients with repeat unexcused absences. Recommended for mandatory deposit policy or phone triage.</p>
+                  </div>
+                  <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container-high px-2.5 py-1 rounded-lg">
+                    {noshowsData.top_offenders ? noshowsData.top_offenders.length : 0} offenders identified
+                  </span>
                 </div>
                 
                 <div className="divide-y divide-[#f1f4ed]">
                   {noshowsData.top_offenders && noshowsData.top_offenders.length > 0 ? (
                     noshowsData.top_offenders.map((off, idx) => (
-                      <div key={idx} className="flex justify-between items-center py-3">
+                      <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between py-3.5 gap-2">
                         <div>
-                          <p className="text-xs font-bold text-on-surface">{off.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-on-surface">{off.name}</p>
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                              {off.policy_recommendation || (off.no_show_count >= 2 ? "Mandatory Pre-Payment Deposit" : "CALL-E 2h Phone Triage")}
+                            </span>
+                          </div>
                           <p className="text-[10px] text-on-surface-variant font-mono mt-0.5">{off.phone || "No phone listed"}</p>
                         </div>
-                        <span className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 px-3 py-1 rounded-xl">
-                          {off.no_show_count} missed appointments
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-semibold text-red-600">
+                            {formatCurrency(off.estimated_lost_revenue || (off.no_show_count * 150))} lost
+                          </span>
+                          <span className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 px-3 py-1 rounded-xl">
+                            {off.no_show_count} missed appointment{off.no_show_count === 1 ? "" : "s"}
+                          </span>
+                        </div>
                       </div>
                     ))
                   ) : (
                     <div className="text-center py-8 text-xs text-on-surface-variant">
-                      Zero repeat offenders recorded! Automated reminders are maintaining high attendance.
+                      Zero repeat offenders recorded! Automated reminders and 2-hour triage are maintaining optimal attendance.
                     </div>
                   )}
                 </div>

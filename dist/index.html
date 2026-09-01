@@ -7,13 +7,21 @@
     <meta name="description" content="AI-powered clinic management — scheduling, patient management and call tracking." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://calle-healthcare-os.onrender.com" />
+    <link rel="preconnect" href="https://calle-healthcare-os.onrender.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-CZF77OiC.js"></script>
+    <script>
+      // Zero-latency background wake-up pulse for Render cold-start mitigation
+      try {
+        fetch("https://calle-healthcare-os.onrender.com/health", { method: "GET", mode: "no-cors" }).catch(function () {});
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/assets/index-kjb12PKW.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-CbehWMLG.js">
     <link rel="modulepreload" crossorigin href="/assets/api-DU2tC-sC.js">
     <link rel="modulepreload" crossorigin href="/assets/icons-Dvu3nIq0.js">
     <link rel="modulepreload" crossorigin href="/assets/charts-DR-irVS6.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-C2YLHVFL.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-BatPaq2X.css">
   </head>
   <body>
     <div id="root"></div>

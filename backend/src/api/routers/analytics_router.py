@@ -33,6 +33,31 @@ async def get_revenue_analytics(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/overview")
+async def get_overview_analytics(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    preset: Optional[str] = None,
+    auth: AuthenticatedUser = Depends(require_permission("dashboard:read"))
+):
+    """
+    Consolidated executive overview: MRR, total period revenue, recovered revenue,
+    average LTV, active patient count, call volume, answer rate, and show rate.
+    """
+    clinic_id = auth.clinic_id
+    try:
+        data = await analytics_service.get_overview_analytics(
+            clinic_id=clinic_id,
+            start_date=start_date,
+            end_date=end_date,
+            preset=preset
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
 @router.get("/calls")
 async def get_calls_analytics(
     start_date: Optional[str] = None,
@@ -79,6 +104,31 @@ async def get_patients_analytics(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/ltv")
+async def get_ltv_analytics(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    preset: Optional[str] = None,
+    auth: AuthenticatedUser = Depends(require_permission("dashboard:read"))
+):
+    """
+    Detailed Patient Lifetime Value (LTV) analytics: average LTV, VIP leaderboard,
+    churn risk cohorts, and revenue distribution across patient tiers.
+    """
+    clinic_id = auth.clinic_id
+    try:
+        data = await analytics_service.calculate_ltv(
+            clinic_id=clinic_id,
+            start_date=start_date,
+            end_date=end_date,
+            preset=preset
+        )
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+
 @router.get("/no-shows")
 async def get_noshows_analytics(
     start_date: Optional[str] = None,
@@ -88,7 +138,7 @@ async def get_noshows_analytics(
 ):
     """
     Returns appointment show vs no-show rate, reduction rate (% change), confirmed vs unconfirmed show rates,
-    daily trend, and repeat offenders list.
+    daily trend, lost revenue, 2h recovery campaign metrics, and repeat offenders list.
     """
     clinic_id = auth.clinic_id
     try:
@@ -99,6 +149,45 @@ async def get_noshows_analytics(
             preset=preset
         )
         return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/attendance-rate")
+async def get_attendance_rate_analytics(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    preset: Optional[str] = None,
+    auth: AuthenticatedUser = Depends(require_permission("dashboard:read"))
+):
+    """
+    Returns dedicated attendance and show rate analytics:
+    Show Rate % = (Completed / (Completed + No-Shows)) * 100, no-show rate, and trend.
+    """
+    clinic_id = auth.clinic_id
+    try:
+        data = await analytics_service.get_noshow_analytics(
+            clinic_id=clinic_id,
+            start_date=start_date,
+            end_date=end_date,
+            preset=preset
+        )
+        return {
+            "data": {
+                "show_rate": data.get("show_rate", 100.0),
+                "no_show_rate": data.get("no_show_rate", 0.0),
+                "completed_count": data.get("completed_count", 0),
+                "no_show_count": data.get("no_show_count", 0),
+                "concluded_appointments": data.get("concluded_appointments", 0),
+                "lost_revenue": data.get("lost_revenue", 0.0),
+                "recovered_revenue": data.get("recovered_revenue", 0.0),
+                "confirmed_show_rate": data.get("confirmed_show_rate", 0.0),
+                "unconfirmed_show_rate": data.get("unconfirmed_show_rate", 0.0),
+                "confirmed_lift_rate": data.get("confirmed_lift_rate", 0.0),
+                "trend": data.get("trend", []),
+                "top_offenders": data.get("top_offenders", [])
+            }
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -126,6 +215,7 @@ async def get_recalls_analytics(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/campaign-comparison")
 @router.get("/campaigns")
 async def get_campaigns_analytics(
     start_date: Optional[str] = None,
@@ -135,11 +225,11 @@ async def get_campaigns_analytics(
 ):
     """
     Returns complete multi-campaign performance comparison:
-    Confirmation vs No-Show Recovery vs Patient Recall vs Post-Visit Survey.
+    Confirmation vs No-Show Recovery vs Patient Recall vs Post-Visit Survey vs Waitlist Backfill.
     """
     clinic_id = auth.clinic_id
     try:
-        data = await analytics_service.get_campaign_analytics(
+        data = await analytics_service.get_campaign_comparison(
             clinic_id=clinic_id,
             start_date=start_date,
             end_date=end_date,
@@ -207,10 +297,41 @@ async def get_competitor_benchmarking(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/specialty-benchmarks")
+async def get_specialty_benchmarking(
+    auth: AuthenticatedUser = Depends(require_permission("dashboard:read"))
+):
+    """
+    Returns anonymous competitor benchmarking against specialty averages (APTA / MGMA / AMGA standards).
+    """
+    clinic_id = auth.clinic_id
+    try:
+        data = await analytics_service.get_competitor_benchmarks(clinic_id=clinic_id)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/benchmarks/opt-in")
+async def toggle_benchmarks_opt_in(
+    opt_in: bool = Query(..., description="Whether to opt into anonymous benchmarking"),
+    auth: AuthenticatedUser = Depends(require_permission("dashboard:read"))
+):
+    """
+    Toggles clinic participation in anonymous specialty benchmarking.
+    """
+    clinic_id = auth.clinic_id
+    try:
+        data = await analytics_service.set_benchmark_opt_in(clinic_id=clinic_id, opt_in=opt_in)
+        return {"data": data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/export")
 async def export_analytics_csv(
     request: Request,
-    type: str = Query("revenue", pattern="^(revenue|financials|calls|heatmap|patients|vips|no_shows|noshows|no-shows|appointments|recalls|campaigns|roi|savings|summary)$"),
+    type: str = Query("revenue", pattern="^(revenue|financials|calls|heatmap|patients|vips|no_shows|noshows|no-shows|appointments|recalls|campaigns|campaign_comparison|campaign-comparison|roi|savings|summary)$"),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     preset: Optional[str] = None,
