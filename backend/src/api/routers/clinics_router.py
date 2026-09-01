@@ -9,13 +9,13 @@ import hmac
 import httpx
 import re
 import asyncio
+import zoneinfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 
 from ...core.database import supabase, supabase_read, update_clinic as db_update_clinic, invalidate_clinic_cache
 from ...core.security import require_permission, AuthenticatedUser
-from ...services.voice_service import voice_service
 from ...services.audit_service import audit_service
 
 DEFAULT_NOTIFICATIONS_CONFIG = {
@@ -35,14 +35,76 @@ DEFAULT_NOTIFICATIONS_CONFIG = {
     "alert_on_noshow": True,
     "sound_alerts_enabled": True,
     "browser_notifications_enabled": False,
+    "reminder_lead_time_hours": 24,
+    "reminder_sms_template": "Hi {patient_name}, your appointment at {clinic_name} is confirmed for {datetime}. Reply CONFIRM or CANCEL.",
+    "quiet_hours_enabled": True,
+    "quiet_hours_start": "21:00",
+    "quiet_hours_end": "08:00",
+}
+
+DEFAULT_ADVANCED_SETTINGS = {
+    "custom_prompt_variables": {
+        "clinic_motto": "Compassionate Care Close to Home",
+        "emergency_escalation_protocol": "Transfer immediately to triage or advise calling 911",
+        "parking_instructions": "Validated parking in the adjacent garage",
+        "cancellation_policy": "24 hours advance notice required"
+    },
+    "fallback_language": "es-MX",
+    "max_concurrent_calls": 5,
+    "call_recording_retention_hours": 24,
+    "recording_retention_policy": "24h_hipaa_purge",
+    "hipaa_auto_purge_enabled": True
 }
 
 router = APIRouter(prefix="/clinics", tags=["Clinics"])
+
+def normalize_to_e164(raw: Optional[str], default_country: str = "+1") -> Optional[str]:
+    """
+    Normalizes a phone number to standard E.164 (+1XXXXXXXXXX or +...).
+    Gracefully handles formatted inputs e.g. +1 (555) 123-4567, (555) 123-4567, 5551234567.
+    """
+    if not raw or not raw.strip():
+        return None
+    cleaned = raw.strip()
+    digits = re.sub(r"\D", "", cleaned)
+    if len(digits) < 10 or len(digits) > 15:
+        raise ValueError("Phone number must contain between 10 and 15 digits in valid E.164 format (e.g. +15551234567).")
+    if cleaned.startswith("+"):
+        return f"+{digits}"
+    if len(digits) == 10:
+        return f"{default_country}{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return f"+{digits}"
+
+def _parse_time_str_to_hhmm(t_str: Any, default: str = "08:00") -> str:
+    """Parse various time formats (e.g. '08:00', '8:00 AM', '5:00 PM', '17:00') to strictly normalized 24h 'HH:MM'."""
+    if not t_str:
+        return default
+    try:
+        t_clean = str(t_str).strip().upper()
+        is_pm = "PM" in t_clean
+        is_am = "AM" in t_clean
+        t_clean = t_clean.replace("AM", "").replace("PM", "").strip()
+        parts = t_clean.split(":")
+        h = int(parts[0].strip())
+        m = int(parts[1].strip()) if len(parts) > 1 else 0
+        if is_pm and h < 12:
+            h += 12
+        elif is_am and h == 12:
+            h = 0
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return f"{h:02d}:{m:02d}"
+        return default
+    except Exception:
+        return default
+
 
 class ClinicCreate(BaseModel):
     name: str
     owner_email: str
     phone_number: Optional[str] = None
+    telnyx_number: Optional[str] = None
     timezone: Optional[str] = None
     specialty: Optional[str] = None
     address: Optional[str] = None
@@ -53,6 +115,9 @@ class ClinicCreate(BaseModel):
     primary_doctor_name: Optional[str] = None
     primary_doctor_credentials: Optional[str] = None
     primary_doctor_phone: Optional[str] = None
+    doctor_title: Optional[str] = None
+    dea_number: Optional[str] = None
+    bio: Optional[str] = None
     npi_number: Optional[str] = None
     medical_license: Optional[str] = None
     emergency_protocols: Optional[str] = None
@@ -80,10 +145,40 @@ class ClinicCreate(BaseModel):
     @classmethod
     def check_create_phone(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v.strip():
+            return normalize_to_e164(v)
+        return v
+
+    @field_validator("timezone")
+    @classmethod
+    def check_create_timezone(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
             v_clean = v.strip()
-            digits = re.sub(r"\D", "", v_clean)
-            if len(digits) < 10 or len(digits) > 15:
-                raise ValueError("Patient Direct Phone Line must contain a valid 10-15 digit phone number.")
+            if len(v_clean) > 80:
+                raise ValueError("Timezone cannot exceed 80 characters.")
+            try:
+                zoneinfo.ZoneInfo(v_clean)
+            except Exception:
+                raise ValueError(f"Invalid IANA timezone identifier: '{v_clean}'. Please select a valid timezone like 'America/New_York' or 'America/Chicago'.")
+            return v_clean
+        return v
+
+    @field_validator("state")
+    @classmethod
+    def check_create_state(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v_clean = v.strip().upper()
+            if len(v_clean) > 20:
+                raise ValueError("State cannot exceed 20 characters.")
+            return v_clean
+        return v
+
+    @field_validator("zip_code")
+    @classmethod
+    def check_create_zip_code(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v_clean = v.strip()
+            if len(v_clean) > 20:
+                raise ValueError("Zip code cannot exceed 20 characters.")
             return v_clean
         return v
 
@@ -105,6 +200,9 @@ class ClinicUpdate(BaseModel):
     primary_doctor_name: Optional[str] = None
     primary_doctor_credentials: Optional[str] = None
     primary_doctor_phone: Optional[str] = None
+    doctor_title: Optional[str] = None
+    dea_number: Optional[str] = None
+    bio: Optional[str] = None
     npi_number: Optional[str] = None
     medical_license: Optional[str] = None
     business_hours: Optional[Any] = None
@@ -118,6 +216,39 @@ class ClinicUpdate(BaseModel):
     webhook_events: Optional[List[str]] = None
     emergency_protocols: Optional[str] = None
     transfer_phone_number: Optional[str] = None
+    custom_prompt_variables: Optional[Dict[str, str]] = None
+    fallback_language: Optional[str] = None
+    max_concurrent_calls: Optional[int] = None
+    call_recording_retention_hours: Optional[int] = None
+    recording_retention_policy: Optional[str] = None
+    hipaa_auto_purge_enabled: Optional[bool] = None
+    advanced_settings: Optional[Dict[str, Any]] = None
+
+    @field_validator("fallback_language")
+    @classmethod
+    def check_fallback_language(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v_clean = v.strip()
+            if len(v_clean) > 20:
+                raise ValueError("Fallback language code cannot exceed 20 characters.")
+            return v_clean
+        return v
+
+    @field_validator("max_concurrent_calls")
+    @classmethod
+    def check_max_concurrent_calls(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None:
+            if v < 1 or v > 100:
+                raise ValueError("Maximum concurrent AI calls must be between 1 and 100.")
+        return v
+
+    @field_validator("call_recording_retention_hours")
+    @classmethod
+    def check_recording_retention_hours(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None:
+            if v < 1 or v > 168:
+                raise ValueError("Call recording retention period must be between 1 and 168 hours (7 days maximum for HIPAA compliance).")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -145,11 +276,28 @@ class ClinicUpdate(BaseModel):
     @classmethod
     def check_phone_number(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v.strip():
-            v_clean = v.strip()
-            digits = re.sub(r"\D", "", v_clean)
-            if len(digits) < 10 or len(digits) > 15:
-                raise ValueError("Patient Direct Phone Line must contain a valid 10-15 digit phone number.")
-            return v_clean
+            return normalize_to_e164(v)
+        return v
+
+    @field_validator("transfer_phone_number")
+    @classmethod
+    def check_transfer_phone_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            return normalize_to_e164(v)
+        return v
+
+    @field_validator("telnyx_number")
+    @classmethod
+    def check_telnyx_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            return normalize_to_e164(v)
+        return v
+
+    @field_validator("twilio_number")
+    @classmethod
+    def check_twilio_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            return normalize_to_e164(v)
         return v
 
     @field_validator("specialty")
@@ -172,6 +320,26 @@ class ClinicUpdate(BaseModel):
             return v_clean
         return v
 
+    @field_validator("state")
+    @classmethod
+    def check_state(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v_clean = v.strip().upper()
+            if len(v_clean) > 20:
+                raise ValueError("State cannot exceed 20 characters.")
+            return v_clean
+        return v
+
+    @field_validator("zip_code")
+    @classmethod
+    def check_zip_code(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v_clean = v.strip()
+            if len(v_clean) > 20:
+                raise ValueError("Zip code cannot exceed 20 characters.")
+            return v_clean
+        return v
+
     @field_validator("timezone")
     @classmethod
     def check_timezone(cls, v: Optional[str]) -> Optional[str]:
@@ -179,6 +347,10 @@ class ClinicUpdate(BaseModel):
             v_clean = v.strip()
             if len(v_clean) > 80:
                 raise ValueError("Timezone cannot exceed 80 characters.")
+            try:
+                zoneinfo.ZoneInfo(v_clean)
+            except Exception:
+                raise ValueError(f"Invalid IANA timezone identifier: '{v_clean}'. Please select a valid timezone like 'America/New_York' or 'America/Chicago'.")
             return v_clean
         return v
 
@@ -204,10 +376,7 @@ class ClinicUpdate(BaseModel):
     @classmethod
     def check_doctor_phone(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v.strip():
-            v = v.strip()
-            digits = re.sub(r"\D", "", v)
-            if len(digits) < 10 or len(digits) > 15:
-                raise ValueError("Doctor phone must contain a valid 10-15 digit phone number.")
+            return normalize_to_e164(v)
         return v
 
     @field_validator("npi_number")
@@ -232,6 +401,35 @@ class ClinicUpdate(BaseModel):
                 raise ValueError("Medical License contains invalid characters. Use letters, numbers, hyphens or dots.")
         return v
 
+    @field_validator("doctor_title")
+    @classmethod
+    def check_doctor_title(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if len(v) > 100:
+                raise ValueError("Doctor title cannot exceed 100 characters.")
+        return v
+
+    @field_validator("dea_number")
+    @classmethod
+    def check_dea_number(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v.strip():
+            v = v.strip().upper()
+            if not re.match(r"^[A-Z]{2}[0-9]{7}$", v):
+                raise ValueError("DEA Registration Number must be 2 uppercase letters followed by 7 digits (e.g. AS1234567).")
+            return v
+        return v
+
+    @field_validator("bio")
+    @classmethod
+    def check_bio(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if len(v) > 2000:
+                raise ValueError("Doctor biography cannot exceed 2000 characters.")
+        return v
+
+
     @field_validator("appointment_types")
     @classmethod
     def check_appointment_types(cls, v: Optional[List[Any]]) -> Optional[List[Dict]]:
@@ -254,12 +452,16 @@ class ClinicUpdate(BaseModel):
                         fee_val = max(0.0, float(fee_val))
                     except (ValueError, TypeError):
                         fee_val = 0.0
-                    cleaned.append({
+                    cpt_val = str(item.get("cpt_code") or item.get("cpt") or "").strip()
+                    entry = {
                         "name": name,
                         "duration": dur,
                         "duration_minutes": dur,
                         "fee": fee_val
-                    })
+                    }
+                    if cpt_val:
+                        entry["cpt_code"] = cpt_val
+                    cleaned.append(entry)
             return cleaned
         return v
 
@@ -310,24 +512,45 @@ class ClinicUpdate(BaseModel):
                     if is_closed:
                         cleaned[canonical_day] = "closed"
                     else:
-                        start_t = str(day_val.get("start") or "08:00").strip()
-                        end_t = str(day_val.get("end") or "18:00").strip()
-                        cleaned[canonical_day] = f"{start_t}-{end_t}"
+                        start_t = _parse_time_str_to_hhmm(day_val.get("start"), "08:00")
+                        end_t = _parse_time_str_to_hhmm(day_val.get("end"), "18:00")
+                        sh, sm = map(int, start_t.split(":"))
+                        eh, em = map(int, end_t.split(":"))
+                        if (sh * 60 + sm) >= (eh * 60 + em):
+                            cleaned[canonical_day] = "closed"
+                        else:
+                            cleaned[canonical_day] = f"{start_t}-{end_t}"
                 elif isinstance(day_val, str):
                     trimmed = day_val.strip().lower()
                     if trimmed in ["closed", "off", "none", ""] or not trimmed:
                         cleaned[canonical_day] = "closed"
                     elif "-" in trimmed or "–" in trimmed:
                         parts = trimmed.replace("–", "-").split("-")
-                        cleaned[canonical_day] = f"{parts[0].strip()}-{parts[1].strip()}"
+                        start_t = _parse_time_str_to_hhmm(parts[0], "08:00")
+                        end_t = _parse_time_str_to_hhmm(parts[1], "18:00")
+                        sh, sm = map(int, start_t.split(":"))
+                        eh, em = map(int, end_t.split(":"))
+                        if (sh * 60 + sm) >= (eh * 60 + em):
+                            cleaned[canonical_day] = "closed"
+                        else:
+                            cleaned[canonical_day] = f"{start_t}-{end_t}"
                     else:
                         cleaned[canonical_day] = "closed"
                 else:
                     cleaned[canonical_day] = "closed"
 
-            # Preserve internal metadata keys like _notifications_config
+            # Preserve and normalize internal metadata keys like _lunch_break and _notifications_config
             for k, val in v.items():
-                if str(k).startswith("_"):
+                if str(k) == "_lunch_break" and isinstance(val, dict):
+                    lb_enabled = val.get("enabled", True) if (val.get("closed") is not True and val.get("enabled") is not False) else False
+                    lb_start = _parse_time_str_to_hhmm(val.get("start"), "12:00")
+                    lb_end = _parse_time_str_to_hhmm(val.get("end"), "13:00")
+                    cleaned["_lunch_break"] = {
+                        "enabled": lb_enabled,
+                        "start": lb_start,
+                        "end": lb_end
+                    }
+                elif str(k).startswith("_"):
                     cleaned[k] = val
 
             return cleaned
@@ -339,6 +562,18 @@ class FactoryReset(BaseModel):
 class SoftDeleteRequest(BaseModel):
     confirmation: str
     reason: Optional[str] = None
+
+class PurgeRecordingsRequest(BaseModel):
+    confirmation: str
+
+class MaintenanceModeRequest(BaseModel):
+    enabled: bool
+    reason: Optional[str] = None
+    confirmation: Optional[str] = None
+
+class ResetDemoRequest(BaseModel):
+    confirmation: str
+    reseed_sample_data: bool = True
 
 def _convert_rows_to_csv(rows: list) -> str:
     """Helper to convert a list of dict rows to clean CSV format."""
@@ -411,26 +646,30 @@ async def get_clinic(id: str, auth: AuthenticatedUser = Depends(require_permissi
             clinic["name"] = "Sunrise Medical Clinic"
         if not clinic.get("specialty"):
             clinic["specialty"] = "General Practice"
-        if not clinic.get("address"):
+        if clinic.get("address") is None:
             clinic["address"] = "100 Michigan Avenue"
-        if not clinic.get("suite"):
+        if clinic.get("suite") is None:
             clinic["suite"] = "Suite 400"
         if not clinic.get("city"):
             clinic["city"] = "Chicago"
-        if not clinic.get("state"):
+        if clinic.get("state") is None:
             clinic["state"] = "IL"
-        if not clinic.get("zip_code"):
+        if clinic.get("zip_code") is None:
             clinic["zip_code"] = "60601"
         if not clinic.get("timezone"):
             clinic["timezone"] = "America/Chicago"
         if not clinic.get("phone_number"):
-            clinic["phone_number"] = "+1 (555) 123-4567"
+            clinic["phone_number"] = "+15551234567"
         if not clinic.get("owner_email"):
             clinic["owner_email"] = auth.email or "admin@sunriseclinic.com"
         if not clinic.get("emergency_protocols"):
             clinic["emergency_protocols"] = "If caller reports chest pain, severe shortness of breath, sudden numbness, uncontrolled bleeding, or life-threatening symptoms, immediately direct them to hang up and call 911 or proceed to the nearest emergency department."
         if not clinic.get("transfer_phone_number"):
-            clinic["transfer_phone_number"] = clinic.get("primary_doctor_phone") or clinic.get("phone_number") or "+1 (555) 987-6543"
+            clinic["transfer_phone_number"] = clinic.get("primary_doctor_phone") or clinic.get("phone_number") or "+15559876543"
+        if not clinic.get("telnyx_number"):
+            clinic["telnyx_number"] = clinic.get("phone_number") or "+15755734355"
+        if not clinic.get("twilio_number"):
+            clinic["twilio_number"] = clinic.get("phone_number") or "+15551234567"
         
         # Retell Agent ID
         agent_id = clinic.get("retell_agent_id")
@@ -452,12 +691,15 @@ async def get_clinic(id: str, auth: AuthenticatedUser = Depends(require_permissi
         clinic["notifications_config"] = merged_notif_config
 
         # Ensure appointment_types is populated and normalized
+        DEFAULT_APPT_TYPES = [
+            {"name": "General Consultation", "duration": 30, "duration_minutes": 30, "fee": 150.0, "cpt_code": "99203"},
+            {"name": "Physical Therapy Evaluation", "duration": 45, "duration_minutes": 45, "fee": 150.0, "cpt_code": "97161"},
+            {"name": "Sports Rehab", "duration": 30, "duration_minutes": 30, "fee": 75.0, "cpt_code": "97110"},
+            {"name": "Follow-up", "duration": 15, "duration_minutes": 15, "fee": 75.0, "cpt_code": "99212"}
+        ]
         raw_types = clinic.get("appointment_types")
         if not raw_types or not isinstance(raw_types, list):
-            clinic["appointment_types"] = [
-                {"name": "Initial Evaluation", "duration": 60, "duration_minutes": 60, "fee": 150.0},
-                {"name": "Follow-up", "duration": 30, "duration_minutes": 30, "fee": 75.0}
-            ]
+            clinic["appointment_types"] = DEFAULT_APPT_TYPES
         else:
             normalized = []
             for item in raw_types:
@@ -475,16 +717,17 @@ async def get_clinic(id: str, auth: AuthenticatedUser = Depends(require_permissi
                         fee_val = max(0.0, float(fee_val))
                     except (ValueError, TypeError):
                         fee_val = 0.0
-                    normalized.append({
+                    cpt_val = str(item.get("cpt_code") or item.get("cpt") or "").strip()
+                    entry = {
                         "name": name,
                         "duration": dur,
                         "duration_minutes": dur,
                         "fee": fee_val
-                    })
-            clinic["appointment_types"] = normalized if normalized else [
-                {"name": "Initial Evaluation", "duration": 60, "duration_minutes": 60, "fee": 150.0},
-                {"name": "Follow-up", "duration": 30, "duration_minutes": 30, "fee": 75.0}
-            ]
+                    }
+                    if cpt_val:
+                        entry["cpt_code"] = cpt_val
+                    normalized.append(entry)
+            clinic["appointment_types"] = normalized if normalized else DEFAULT_APPT_TYPES
 
         # Ensure business_hours is populated and normalized with defaults if missing
         raw_biz = clinic.get("business_hours")
@@ -512,7 +755,27 @@ async def get_clinic(id: str, auth: AuthenticatedUser = Depends(require_permissi
             clinic["webhook_url"] = None
         if "webhook_secret" not in clinic:
             clinic["webhook_secret"] = None
+
+        # Consolidate and populate Advanced Setup configuration
+        raw_adv = clinic.get("advanced_settings") or {}
+        if not isinstance(raw_adv, dict):
+            raw_adv = {}
+        merged_adv = {**DEFAULT_ADVANCED_SETTINGS, **raw_adv}
+        clinic["advanced_settings"] = merged_adv
+        clinic["custom_prompt_variables"] = merged_adv.get("custom_prompt_variables") or DEFAULT_ADVANCED_SETTINGS["custom_prompt_variables"]
+        clinic["fallback_language"] = merged_adv.get("fallback_language") or DEFAULT_ADVANCED_SETTINGS["fallback_language"]
+        clinic["max_concurrent_calls"] = merged_adv.get("max_concurrent_calls") or DEFAULT_ADVANCED_SETTINGS["max_concurrent_calls"]
+        clinic["call_recording_retention_hours"] = merged_adv.get("call_recording_retention_hours") or DEFAULT_ADVANCED_SETTINGS["call_recording_retention_hours"]
+        clinic["recording_retention_policy"] = merged_adv.get("recording_retention_policy") or DEFAULT_ADVANCED_SETTINGS["recording_retention_policy"]
+        clinic["hipaa_auto_purge_enabled"] = merged_adv.get("hipaa_auto_purge_enabled", True)
             
+        # Load synchronized providers from providers table
+        try:
+            prov_res = supabase_read.table("providers").select("*").eq("tenant_id", clinic_id).eq("is_deleted", False).execute()
+            clinic["providers"] = prov_res.data or []
+        except Exception:
+            clinic["providers"] = []
+
         return {"data": clinic}
     except HTTPException:
         raise
@@ -530,7 +793,7 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
     # Clean / strip any string fields
-    for str_key in ["specialty", "address", "suite", "city", "state", "zip_code", "timezone", "phone_number", "twilio_number", "primary_doctor_name", "primary_doctor_credentials", "primary_doctor_phone", "npi_number", "medical_license", "emergency_protocols", "transfer_phone_number"]:
+    for str_key in ["specialty", "address", "suite", "city", "state", "zip_code", "timezone", "phone_number", "twilio_number", "telnyx_number", "primary_doctor_name", "primary_doctor_credentials", "primary_doctor_phone", "doctor_title", "dea_number", "bio", "npi_number", "medical_license", "emergency_protocols", "transfer_phone_number"]:
         if str_key in update_data and isinstance(update_data[str_key], str):
             update_data[str_key] = update_data[str_key].strip()
 
@@ -555,16 +818,22 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
                     fee_val = max(0.0, float(fee_val))
                 except (ValueError, TypeError):
                     fee_val = 0.0
-                cleaned_types.append({
+                cpt_val = str(item.get("cpt_code") or item.get("cpt") or "").strip()
+                entry = {
                     "name": name,
                     "duration": dur,
                     "duration_minutes": dur,
                     "fee": fee_val
-                })
+                }
+                if cpt_val:
+                    entry["cpt_code"] = cpt_val
+                cleaned_types.append(entry)
         if not cleaned_types:
             cleaned_types = [
-                {"name": "Initial Evaluation", "duration": 60, "duration_minutes": 60, "fee": 150.0},
-                {"name": "Follow-up", "duration": 30, "duration_minutes": 30, "fee": 75.0}
+                {"name": "General Consultation", "duration": 30, "duration_minutes": 30, "fee": 150.0, "cpt_code": "99203"},
+                {"name": "Physical Therapy Evaluation", "duration": 45, "duration_minutes": 45, "fee": 150.0, "cpt_code": "97161"},
+                {"name": "Sports Rehab", "duration": 30, "duration_minutes": 30, "fee": 75.0, "cpt_code": "97110"},
+                {"name": "Follow-up", "duration": 15, "duration_minutes": 15, "fee": 75.0, "cpt_code": "99212"}
             ]
         update_data["appointment_types"] = cleaned_types
         
@@ -573,6 +842,29 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
         check_res = supabase_read.table("clinics").select("*").eq("id", clinic_id).single().execute()
         existing_clinic = check_res.data or {}
         notif_config_present = "notifications_config" in existing_clinic
+
+        # Consolidate Advanced Settings fields into advanced_settings JSONB
+        adv_fields = [
+            "custom_prompt_variables",
+            "fallback_language",
+            "max_concurrent_calls",
+            "call_recording_retention_hours",
+            "recording_retention_policy",
+            "hipaa_auto_purge_enabled"
+        ]
+        adv_updates = {}
+        if "advanced_settings" in update_data and isinstance(update_data["advanced_settings"], dict):
+            adv_updates.update(update_data.pop("advanced_settings"))
+        for k in adv_fields:
+            if k in update_data:
+                adv_updates[k] = update_data.pop(k)
+
+        if adv_updates:
+            existing_adv = existing_clinic.get("advanced_settings") or {}
+            if not isinstance(existing_adv, dict):
+                existing_adv = {}
+            merged_adv = {**DEFAULT_ADVANCED_SETTINGS, **existing_adv, **adv_updates}
+            update_data["advanced_settings"] = merged_adv
         
         # Merge notifications_config if being updated
         if "notifications_config" in update_data and isinstance(update_data["notifications_config"], dict):
@@ -614,6 +906,7 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
                 cfg_res = supabase_read.table("agent_configs").select("*").eq("clinic_id", clinic_id).execute()
                 if cfg_res.data:
                     cfg = cfg_res.data[0]
+                    cur_adv = updated_clinic.get("advanced_settings") or {}
                     recompiled = compile_agent_prompt(
                         clinic_name=meta.get("name") or "Medical Clinic",
                         greeting=cfg.get("greeting_message") or "",
@@ -630,6 +923,8 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
                         ai_name=cfg.get("ai_name") or "Alex",
                         speaking_style=cfg.get("speaking_style") or "Warm & Empathetic",
                         emergency_protocols=cfg.get("emergency_protocols") or meta.get("emergency_protocols"),
+                        custom_prompt_variables=cur_adv.get("custom_prompt_variables"),
+                        fallback_language=cur_adv.get("fallback_language"),
                     )
                     supabase.table("agent_configs").update({
                         "compiled_prompt": recompiled,
@@ -637,6 +932,7 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
                     }).eq("clinic_id", clinic_id).execute()
 
                 if updated_clinic.get("retell_agent_id"):
+                    from ...services.voice_service import voice_service
                     await voice_service.update_agent_prompt(clinic_id)
             except Exception as retell_err:
                 pass
@@ -654,8 +950,49 @@ async def update_clinic(id: str, updates: ClinicUpdate, request: Request, auth: 
                 "before": {k: existing_clinic.get(k) for k in update_data.keys() if k in existing_clinic},
                 "after": update_data
             },
-            request=request
         )
+        # Synchronize primary doctor with providers table for multi-provider clinic scheduling
+        try:
+            doc_name = updated_clinic.get("primary_doctor_name")
+            if doc_name and doc_name.strip():
+                prov_res = supabase_read.table("providers").select("*").eq("tenant_id", clinic_id).eq("is_deleted", False).execute()
+                existing_provs = prov_res.data or []
+                
+                target_prov = None
+                for p in existing_provs:
+                    if p.get("display_name", "").strip().lower() == doc_name.strip().lower():
+                        target_prov = p
+                        break
+                        
+                if not target_prov and existing_provs:
+                    old_doc_name = existing_clinic.get("primary_doctor_name")
+                    if old_doc_name:
+                        for p in existing_provs:
+                            if p.get("display_name", "").strip().lower() == old_doc_name.strip().lower():
+                                target_prov = p
+                                break
+                                
+                prov_payload = {
+                    "display_name": doc_name.strip(),
+                    "title": (updated_clinic.get("doctor_title") or updated_clinic.get("primary_doctor_credentials") or "").strip() or None,
+                    "specialty": (updated_clinic.get("specialty") or "").strip() or None,
+                    "npi_number": (updated_clinic.get("npi_number") or "").strip() or None,
+                    "dea_number": (updated_clinic.get("dea_number") or "").strip() or None,
+                    "bio": (updated_clinic.get("bio") or "").strip() or None,
+                    "is_accepting_patients": True,
+                    "is_deleted": False
+                }
+                
+                if target_prov:
+                    supabase.table("providers").update(prov_payload).eq("id", target_prov["id"]).execute()
+                else:
+                    prov_payload["tenant_id"] = clinic_id
+                    supabase.table("providers").insert(prov_payload).execute()
+                    
+            prov_list = supabase_read.table("providers").select("*").eq("tenant_id", clinic_id).eq("is_deleted", False).execute()
+            updated_clinic["providers"] = prov_list.data or []
+        except Exception:
+            pass
 
         return {"data": updated_clinic}
     except Exception as e:
@@ -781,6 +1118,373 @@ async def export_clinic_data(
         raise HTTPException(status_code=500, detail=f"Failed to generate clinic export: {str(e)}")
 
 
+@router.post("/{id}/purge-recordings")
+async def purge_call_recordings(
+    id: str,
+    req: PurgeRecordingsRequest,
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_permission("settings:write"))
+):
+    """
+    HIPAA Data Minimization / Zero Retention:
+    Purges all call audio recordings and pointers immediately for this clinic.
+    Restricted strictly to clinic owners.
+    """
+    clinic_id = auth.clinic_id
+    if id != clinic_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if auth.role != "owner":
+        raise HTTPException(status_code=403, detail="Only clinic owners can purge call recordings")
+        
+    conf = (req.confirmation or "").strip().upper()
+    if conf != "PURGE RECORDINGS":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid confirmation phrase. Please type 'PURGE RECORDINGS' to confirm."
+        )
+        
+    try:
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        
+        # 1. Calls table
+        calls_res = supabase_read.table("calls").select("id").eq("clinic_id", clinic_id).not_.is_("recording_url", "null").execute()
+        purged_calls = len(calls_res.data or [])
+        if purged_calls > 0:
+            supabase.table("calls").update({"recording_url": None}).eq("clinic_id", clinic_id).execute()
+            
+        # 2. Call_logs table (linked via tenant_id or clinic patients)
+        purged_call_logs = 0
+        try:
+            cl_res = supabase_read.table("call_logs").select("id").eq("tenant_id", clinic_id).not_.is_("recording_url", "null").execute()
+            purged_call_logs = len(cl_res.data or [])
+            if purged_call_logs > 0:
+                supabase.table("call_logs").update({
+                    "recording_url": None,
+                    "recording_purged_at": now_iso
+                }).eq("tenant_id", clinic_id).execute()
+        except Exception as cl_err:
+            print(f"[PurgeRecordings] Note on call_logs: {cl_err}")
+            
+        # 3. Prior_auth_requests
+        purged_pa = 0
+        try:
+            pa_res = supabase_read.table("prior_auth_requests").select("id").eq("tenant_id", clinic_id).not_.is_("call_recording_url", "null").execute()
+            purged_pa = len(pa_res.data or [])
+            if purged_pa > 0:
+                supabase.table("prior_auth_requests").update({"call_recording_url": None}).eq("tenant_id", clinic_id).execute()
+        except Exception:
+            pass
+
+        total_purged = purged_calls + purged_call_logs + purged_pa
+        
+        # Audit log the purge
+        await audit_service.log(
+            clinic_id=clinic_id,
+            user_id=auth.user_id,
+            user_email=auth.email,
+            action="clinic.recordings_purged",
+            resource_type="calls",
+            resource_id=clinic_id,
+            details={
+                "purged_calls": purged_calls,
+                "purged_call_logs": purged_call_logs,
+                "purged_pa": purged_pa,
+                "total_purged": total_purged,
+                "purged_at": now_iso
+            },
+            request=request
+        )
+        
+        return {
+            "success": True,
+            "message": f"Successfully purged {total_purged} call recording(s) across operational storage and database references.",
+            "total_purged": total_purged
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to purge call recordings: {str(e)}")
+
+
+@router.post("/{id}/maintenance-mode")
+async def toggle_maintenance_mode(
+    id: str,
+    req: MaintenanceModeRequest,
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_permission("settings:write"))
+):
+    """
+    Emergency Maintenance Mode Toggle:
+    Immediately halts receptionist voice agent answering and pauses outbound automated workflows.
+    Restricted strictly to clinic owners.
+    """
+    clinic_id = auth.clinic_id
+    if id != clinic_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if auth.role != "owner":
+        raise HTTPException(status_code=403, detail="Only clinic owners can toggle emergency maintenance mode")
+        
+    # Get existing clinic
+    clinic_res = supabase_read.table("clinics").select("name, status, notifications_config").eq("id", clinic_id).single().execute()
+    existing = clinic_res.data or {}
+    clinic_name = existing.get("name", "")
+    
+    if req.enabled:
+        conf = (req.confirmation or "").strip()
+        if conf.upper() != "MAINTENANCE MODE" and conf.lower() != clinic_name.strip().lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid confirmation phrase. Please type '{clinic_name}' or 'MAINTENANCE MODE' to enable emergency mode."
+            )
+
+    new_status = "maintenance" if req.enabled else "active"
+    notif_config = existing.get("notifications_config") or {}
+    if not isinstance(notif_config, dict):
+        notif_config = {}
+        
+    notif_config["emergency_maintenance"] = {
+        "enabled": req.enabled,
+        "reason": req.reason or ("Emergency system maintenance" if req.enabled else None),
+        "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "updated_by": auth.email
+    }
+    
+    updates = {
+        "status": new_status,
+        "notifications_config": notif_config
+    }
+    
+    db_update_clinic(clinic_id, updates)
+    invalidate_clinic_cache(clinic_id, auth.email)
+    
+    await audit_service.log(
+        clinic_id=clinic_id,
+        user_id=auth.user_id,
+        user_email=auth.email,
+        action="clinic.maintenance_mode_toggled",
+        resource_type="clinics",
+        resource_id=clinic_id,
+        details={
+            "enabled": req.enabled,
+            "previous_status": existing.get("status"),
+            "new_status": new_status,
+            "reason": req.reason
+        },
+        request=request
+    )
+    
+    msg = "Emergency maintenance mode has been activated. Receptionist services and automated messaging are temporarily suspended." if req.enabled else "Emergency maintenance mode has been deactivated. Normal clinic operations have resumed."
+    return {
+        "success": True,
+        "status": new_status,
+        "maintenance_mode": req.enabled,
+        "message": msg
+    }
+
+
+@router.post("/{id}/reset-demo")
+async def reset_demo_data(
+    id: str,
+    req: ResetDemoRequest,
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_permission("settings:write"))
+):
+    """
+    Reset & Reseed Demo Data:
+    Clears operational records (without deleting clinic settings) and re-seeds clean, realistic synthetic demo data.
+    Restricted strictly to clinic owners.
+    """
+    clinic_id = auth.clinic_id
+    if id != clinic_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if auth.role != "owner":
+        raise HTTPException(status_code=403, detail="Only clinic owners can reset demo data")
+        
+    if (req.confirmation or "").strip().upper() != "RESET DEMO DATA":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid confirmation phrase. Type 'RESET DEMO DATA' to confirm."
+        )
+        
+    try:
+        # 1. Find all patient IDs for this clinic to safely clear dependent rows
+        p_res = supabase_read.table("patients").select("id").eq("clinic_id", clinic_id).execute()
+        patient_ids = [p["id"] for p in (p_res.data or [])]
+        
+        # 2. Safely clear dependent tables in order to prevent foreign key violations
+        if patient_ids:
+            for pid in patient_ids:
+                try:
+                    supabase.table("clinical_notes").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("sms_logs").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("call_logs").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("prior_auth_requests").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+
+        try:
+            supabase.table("sms_messages").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+        try:
+            supabase.table("revenue_events").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+        try:
+            supabase.table("calls").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+        try:
+            supabase.table("appointments").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+        try:
+            supabase.table("waitlist").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+        try:
+            supabase.table("outbound_calls").delete().eq("clinic_id", clinic_id).execute()
+        except Exception:
+            pass
+            
+        # Finally delete patients
+        supabase.table("patients").delete().eq("clinic_id", clinic_id).execute()
+        
+        seeded_summary = {}
+        if req.reseed_sample_data:
+            # Seed 5 realistic patients
+            new_patients = [
+                {"clinic_id": clinic_id, "name": "John Doe", "email": "john.doe@gmail.com", "phone": "+15550190001", "insurance_provider": "Blue Cross Blue Shield", "insurance_member_id": "BCB123456", "total_visits": 3, "total_revenue_generated": 450.0},
+                {"clinic_id": clinic_id, "name": "Jane Smith", "email": "jane.smith@yahoo.com", "phone": "+15550190002", "insurance_provider": "Aetna", "insurance_member_id": "AET987654", "total_visits": 2, "total_revenue_generated": 300.0},
+                {"clinic_id": clinic_id, "name": "Robert Johnson", "email": "robert.j@outlook.com", "phone": "+15550190003", "insurance_provider": "Cigna", "insurance_member_id": "CIG741258", "total_visits": 1, "total_revenue_generated": 150.0},
+                {"clinic_id": clinic_id, "name": "Emily Davis", "email": "emily.d@gmail.com", "phone": "+15550190004", "insurance_provider": "UnitedHealthcare", "insurance_member_id": "UHC369852", "total_visits": 4, "total_revenue_generated": 600.0},
+                {"clinic_id": clinic_id, "name": "Michael Wilson", "email": "michael.w@gmail.com", "phone": "+15550190005", "insurance_provider": "Humana", "insurance_member_id": "HUM159357", "total_visits": 0, "total_revenue_generated": 0.0}
+            ]
+            inserted_patients = []
+            for p in new_patients:
+                p_insert = supabase.table("patients").insert(p).execute()
+                if p_insert.data:
+                    inserted_patients.append(p_insert.data[0])
+                    
+            # Seed 6 appointments across past, today, and future
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            appt_types = ["Initial Evaluation", "Follow-up Visit", "Physical Therapy Session"]
+            
+            if inserted_patients:
+                # 2 past completed
+                for i in range(2):
+                    pt = inserted_patients[i % len(inserted_patients)]
+                    supabase.table("appointments").insert({
+                        "clinic_id": clinic_id,
+                        "patient_id": pt["id"],
+                        "patient_name": pt["name"],
+                        "patient_phone": pt["phone"],
+                        "appointment_type": appt_types[i % len(appt_types)],
+                        "datetime": (now_utc - datetime.timedelta(days=i+2, hours=3)).isoformat(),
+                        "duration_minutes": 45,
+                        "status": "completed",
+                        "revenue_amount": 150,
+                        "insurance_verified": True
+                    }).execute()
+                
+                # 1 no-show
+                pt_ns = inserted_patients[2 % len(inserted_patients)]
+                supabase.table("appointments").insert({
+                    "clinic_id": clinic_id,
+                    "patient_id": pt_ns["id"],
+                    "patient_name": pt_ns["name"],
+                    "patient_phone": pt_ns["phone"],
+                    "appointment_type": "Initial Evaluation",
+                    "datetime": (now_utc - datetime.timedelta(days=1, hours=2)).isoformat(),
+                    "duration_minutes": 60,
+                    "status": "no_show",
+                    "revenue_amount": 0,
+                    "noshow_risk": 0.85
+                }).execute()
+                
+                # 3 future scheduled
+                for i in range(3):
+                    pt_fut = inserted_patients[(i+3) % len(inserted_patients)]
+                    supabase.table("appointments").insert({
+                        "clinic_id": clinic_id,
+                        "patient_id": pt_fut["id"],
+                        "patient_name": pt_fut["name"],
+                        "patient_phone": pt_fut["phone"],
+                        "appointment_type": appt_types[i % len(appt_types)],
+                        "datetime": (now_utc + datetime.timedelta(days=i+1, hours=2)).isoformat(),
+                        "duration_minutes": 30,
+                        "status": "confirmed" if i == 0 else "scheduled",
+                        "revenue_amount": 150
+                    }).execute()
+                    
+                # Seed 4 call logs with outcomes
+                sample_transcripts = [
+                    ("Patient: Hi, I need to book a physical therapy session for next week.\nAI: I can assist with that! We have Wednesday at 10:00 AM available. Would you like me to book it?\nPatient: Yes please, thank you!", "Scheduled Appointment"),
+                    ("Patient: What are your opening hours on Friday?\nAI: Oakridge Clinic is open Monday through Friday, 8:00 AM to 6:00 PM.\nPatient: Thank you, that helps!", "Answered Question"),
+                    ("Patient: Can I check if you accept Blue Cross insurance?\nAI: Yes, we accept Blue Cross Blue Shield, Aetna, Cigna, and UnitedHealthcare.\nPatient: Great, I'll call back to book.", "Insurance Inquiry"),
+                    ("Patient: I'd like to reschedule my appointment tomorrow.\nAI: No problem. I have Thursday at 2:00 PM available. Shall I move it for you?\nPatient: Yes, please do.", "Rescheduled Appointment")
+                ]
+                for i, (transcript, outcome) in enumerate(sample_transcripts):
+                    pt_call = inserted_patients[i % len(inserted_patients)]
+                    supabase.table("calls").insert({
+                        "clinic_id": clinic_id,
+                        "patient_id": pt_call["id"],
+                        "from_number": pt_call["phone"],
+                        "to_number": "+15558392019",
+                        "direction": "inbound",
+                        "call_type": "receptionist",
+                        "duration_seconds": 65 + i * 15,
+                        "status": "completed",
+                        "outcome": outcome,
+                        "transcript": transcript,
+                        "started_at": (now_utc - datetime.timedelta(hours=i*4 + 2)).isoformat(),
+                        "ended_at": (now_utc - datetime.timedelta(hours=i*4 + 2) + datetime.timedelta(seconds=65+i*15)).isoformat()
+                    }).execute()
+                    
+            seeded_summary = {
+                "patients": len(inserted_patients),
+                "appointments": 6,
+                "calls": 4
+            }
+
+        # Audit log
+        await audit_service.log(
+            clinic_id=clinic_id,
+            user_id=auth.user_id,
+            user_email=auth.email,
+            action="clinic.demo_reset",
+            resource_type="clinics",
+            resource_id=clinic_id,
+            details={
+                "reseeded": req.reseed_sample_data,
+                "summary": seeded_summary
+            },
+            request=request
+        )
+        
+        return {
+            "success": True,
+            "message": "Demo data has been reset and seeded with clean synthetic operational records.",
+            "seeded_summary": seeded_summary
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset demo data: {str(e)}")
+
+
 @router.post("/{id}/soft-delete")
 async def soft_delete_clinic(
     id: str,
@@ -823,6 +1527,11 @@ async def soft_delete_clinic(
         db_update_clinic(clinic_id, updates)
         invalidate_clinic_cache(clinic_id, auth.email)
         
+        try:
+            supabase.table("tenants").update({"is_active": False}).eq("id", clinic_id).execute()
+        except Exception:
+            pass
+        
         # Log audit entry
         await audit_service.log(
             clinic_id=clinic_id,
@@ -846,6 +1555,56 @@ async def soft_delete_clinic(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/{id}/reactivate")
+async def reactivate_clinic(
+    id: str,
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_permission("settings:write"))
+):
+    """
+    Reactivate a previously soft-deleted clinic account.
+    Restricted strictly to clinic owners.
+    """
+    clinic_id = auth.clinic_id
+    if id != clinic_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if auth.role != "owner":
+        raise HTTPException(status_code=403, detail="Only clinic owners can reactivate a clinic account")
+        
+    try:
+        updates = {
+            "is_active": True,
+            "status": "active",
+            "deleted_at": None,
+            "cancellation_reason": None
+        }
+        db_update_clinic(clinic_id, updates)
+        invalidate_clinic_cache(clinic_id, auth.email)
+        
+        try:
+            supabase.table("tenants").update({"is_active": True}).eq("id", clinic_id).execute()
+        except Exception:
+            pass
+            
+        await audit_service.log(
+            clinic_id=clinic_id,
+            user_id=auth.user_id,
+            user_email=auth.email,
+            action="clinic.reactivated",
+            resource_type="clinics",
+            resource_id=clinic_id,
+            details={"reactivated_by": auth.email},
+            request=request
+        )
+        
+        return {"success": True, "message": "Clinic account reactivated successfully. Operations have been fully restored."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/{id}/factory-reset")
 async def factory_reset(id: str, reset: FactoryReset, request: Request, auth: AuthenticatedUser = Depends(require_permission("settings:write"))):
     clinic_id = auth.clinic_id
@@ -859,6 +1618,29 @@ async def factory_reset(id: str, reset: FactoryReset, request: Request, auth: Au
         raise HTTPException(status_code=400, detail="Invalid confirmation phrase. Type 'DELETE EVERYTHING' to confirm.")
         
     try:
+        # 1. Fetch patient IDs to clear FK-dependent rows safely
+        p_res = supabase_read.table("patients").select("id").eq("clinic_id", clinic_id).execute()
+        patient_ids = [p["id"] for p in (p_res.data or [])]
+        
+        if patient_ids:
+            for pid in patient_ids:
+                try:
+                    supabase.table("clinical_notes").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("sms_logs").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("call_logs").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+                try:
+                    supabase.table("prior_auth_requests").delete().eq("patient_id", pid).execute()
+                except Exception:
+                    pass
+
         # Wipe operational tables in order
         supabase.table("sms_messages").delete().eq("clinic_id", clinic_id).execute()
         supabase.table("revenue_events").delete().eq("clinic_id", clinic_id).execute()
@@ -885,7 +1667,7 @@ async def factory_reset(id: str, reset: FactoryReset, request: Request, auth: Au
             resource_id=clinic_id,
             details={
                 "confirmation": reset.confirmation,
-                "tables_wiped": ["sms_messages", "revenue_events", "calls", "appointments", "waitlist", "patients"]
+                "tables_wiped": ["clinical_notes", "sms_logs", "call_logs", "prior_auth_requests", "sms_messages", "revenue_events", "calls", "appointments", "waitlist", "patients"]
             },
             request=request
         )
@@ -904,6 +1686,7 @@ async def create_retell_agent(id: str, request: Request, auth: AuthenticatedUser
     if id != clinic_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    from ...services.voice_service import voice_service
     result = await voice_service.create_agent(clinic_id)
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Failed to create agent"))
@@ -1134,5 +1917,87 @@ async def test_webhook(
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to connect to webhook URL: {str(e)}")
+
+
+@router.post("/{id}/purge-recordings")
+async def trigger_recording_purge(
+    id: str,
+    request: Request,
+    auth: AuthenticatedUser = Depends(require_permission("settings:write"))
+):
+    """
+    HIPAA Data Minimization: Execute immediate call recording purge for this clinic.
+    Permanently purges voice audio URLs older than the configured retention period (default 24h).
+    Encrypted transcripts, structured metadata, and immutable audit logs are preserved.
+    """
+    clinic_id = auth.clinic_id
+    if id != "me" and id != clinic_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    try:
+        # Get retention hours
+        c_res = supabase_read.table("clinics").select("advanced_settings").eq("id", clinic_id).single().execute()
+        adv = (c_res.data or {}).get("advanced_settings") or {}
+        retention_hours = adv.get("call_recording_retention_hours", 24)
+        cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=retention_hours)).isoformat()
+
+        # 1. Purge from calls table
+        purged_calls = 0
+        try:
+            calls_to_purge = supabase_read.table("calls").select("id").eq("clinic_id", clinic_id).is_not("recording_url", "null").lt("created_at", cutoff).execute()
+            if calls_to_purge.data:
+                for c in calls_to_purge.data:
+                    supabase.table("calls").update({"recording_url": None}).eq("id", c["id"]).execute()
+                purged_calls = len(calls_to_purge.data)
+        except Exception as e:
+            pass
+
+        # 2. Purge from call_logs table
+        purged_call_logs = 0
+        try:
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            cl_to_purge = supabase_read.table("call_logs").select("id").eq("tenant_id", clinic_id).is_not("recording_url", "null").lt("created_at", cutoff).execute()
+            if cl_to_purge.data:
+                for cl in cl_to_purge.data:
+                    supabase.table("call_logs").update({
+                        "recording_url": None,
+                        "recording_purged_at": now_iso
+                    }).eq("id", cl["id"]).execute()
+                purged_call_logs = len(cl_to_purge.data)
+        except Exception as e:
+            pass
+
+        total_purged = purged_calls + purged_call_logs
+
+        # Audit log HIPAA recording purge
+        await audit_service.log(
+            clinic_id=clinic_id,
+            user_id=auth.user_id,
+            user_email=auth.email,
+            action="clinic.purge_recordings",
+            resource_type="clinics",
+            resource_id=clinic_id,
+            details={
+                "retention_hours": retention_hours,
+                "cutoff_timestamp": cutoff,
+                "recordings_purged_calls": purged_calls,
+                "recordings_purged_call_logs": purged_call_logs,
+                "total_purged": total_purged,
+                "policy": "24h_hipaa_purge"
+            },
+            request=request
+        )
+
+        return {
+            "success": True,
+            "message": f"HIPAA 24h auto-purge scan completed. {total_purged} expired audio recording(s) purged.",
+            "total_purged": total_purged,
+            "retention_hours": retention_hours,
+            "policy": "24h_hipaa_purge",
+            "enforced_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 

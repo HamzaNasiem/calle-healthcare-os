@@ -81,10 +81,17 @@ async def job_calle_confirmation_calls():
                 continue
 
             clinic_id = apt.get("clinic_id") or "d3b07384-d113-46a6-a719-38cf89235d54"
-            clinic_res = supabase_read.table("clinics").select("name, timezone").eq("id", clinic_id).execute()
+            clinic_res = supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
             clinic_info = clinic_res.data[0] if clinic_res.data else {}
-            if not (8 <= now.hour < 18):
-                log.info(f"[CALL-E Confirmation] Skipping apt {apt['id']}, outside 8am-6pm UTC window")
+            
+            # Enforce TCPA quiet hours (8am - 9pm in clinic local timezone)
+            from .tcpa_service import tcpa_service
+            is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+                timezone_str=clinic_info.get("timezone"),
+                notifications_config=clinic_info.get("notifications_config")
+            )
+            if is_quiet:
+                log.info(f"[CALL-E Confirmation] Skipping apt {apt['id']}, {quiet_reason}")
                 continue
 
             # TCPA check

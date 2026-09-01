@@ -360,17 +360,34 @@ class SmsService:
                 
             clinic_id = appt["clinic_id"]
 
-            # Check clinic notifications_config preference
+            # Check clinic notifications_config preference and TCPA quiet hours
+            c_conf = {}
+            clinic_name = "your clinic"
             try:
-                clinic_res = supabase.table("clinics").select("notifications_config, business_hours").eq("id", clinic_id).single().execute()
+                clinic_res = supabase.table("clinics").select("name, timezone, notifications_config, business_hours").eq("id", clinic_id).single().execute()
                 if clinic_res.data:
-                    c_conf = clinic_res.data.get("notifications_config")
+                    c_data = clinic_res.data
+                    clinic_name = c_data.get("name") or "your clinic"
+                    c_conf = c_data.get("notifications_config")
                     if not isinstance(c_conf, dict):
-                        b_hours = clinic_res.data.get("business_hours") or {}
+                        b_hours = c_data.get("business_hours") or {}
                         c_conf = b_hours.get("_notifications_config") if isinstance(b_hours, dict) else {}
-                    if isinstance(c_conf, dict) and c_conf.get("reminders_enabled") is False:
+                    if not isinstance(c_conf, dict):
+                        c_conf = {}
+
+                    if c_conf.get("reminders_enabled") is False:
                         log.info(f"[sms.send_reminder] Reminders disabled for clinic {clinic_id}. Skipping.")
                         return {"success": True, "skipped": True, "reason": "reminders_disabled"}
+
+                    # TCPA & Quiet Hours Enforcement
+                    from .tcpa_service import tcpa_service
+                    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+                        timezone_str=c_data.get("timezone"),
+                        notifications_config=c_conf
+                    )
+                    if is_quiet:
+                        log.info(f"[sms.send_reminder] {quiet_reason}. Deferring reminder for appt {appointment_id}.")
+                        return {"success": False, "skipped": True, "reason": "quiet_hours", "detail": quiet_reason}
             except Exception as conf_err:
                 log.warning(f"[sms.send_reminder] Config check warning: {conf_err}")
 
@@ -396,13 +413,24 @@ class SmsService:
                 except Exception as lang_err:
                     log.warning(f"[sms.send_reminder] Could not fetch language preference: {lang_err}")
 
-            # Build bilingual reminder body using template
-            template = get_template("appointment_reminder", lang=lang_pref)
-            body = template.format(
-                patient_name=appt.get("patient_name", patient.get("name", "")),
-                clinic_name=appt.get("clinic_name", "your clinic"),
-                datetime=datetime_str
-            )
+            # Template resolution: custom clinic template or standard bilingual template
+            custom_template = c_conf.get("reminder_sms_template") if isinstance(c_conf, dict) else None
+            patient_disp_name = appt.get("patient_name") or patient.get("name") or "there"
+            clinic_disp_name = appt.get("clinic_name") or clinic_name
+
+            if custom_template and str(custom_template).strip():
+                # Safe replacement to avoid exceptions on user-added tags
+                body = str(custom_template)\
+                    .replace("{patient_name}", str(patient_disp_name))\
+                    .replace("{clinic_name}", str(clinic_disp_name))\
+                    .replace("{datetime}", str(datetime_str))
+            else:
+                template = get_template("appointment_reminder", lang=lang_pref)
+                body = template.format(
+                    patient_name=patient_disp_name,
+                    clinic_name=clinic_disp_name,
+                    datetime=datetime_str
+                )
 
             send_res = await self.send(
                 clinic_id=clinic_id,

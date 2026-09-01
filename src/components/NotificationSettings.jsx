@@ -24,7 +24,11 @@ import {
   Zap,
   Info,
   ExternalLink,
-  Layers
+  Layers,
+  RotateCcw,
+  Shield,
+  FileText,
+  HelpCircle
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -36,7 +40,7 @@ import {
   showBrowserNotification
 } from "../lib/notifications";
 
-import { DEFAULT_NOTIFICATIONS_CONFIG } from './notificationConstants.js';
+import { DEFAULT_NOTIFICATIONS_CONFIG, DEFAULT_REMINDER_SMS_TEMPLATE } from './notificationConstants.js';
 
 const NotificationSettings = ({ clinicData, onClinicUpdate }) => {
   const { language } = useAuth();
@@ -119,6 +123,32 @@ const NotificationSettings = ({ clinicData, onClinicUpdate }) => {
       ...prev,
       [key]: value,
     }));
+  };
+
+  const handleInsertVariable = (variableTag) => {
+    setConfig((prev) => {
+      const current = prev.reminder_sms_template || DEFAULT_REMINDER_SMS_TEMPLATE;
+      return {
+        ...prev,
+        reminder_sms_template: `${current} ${variableTag}`,
+      };
+    });
+  };
+
+  const handleResetTemplate = () => {
+    setConfig((prev) => ({
+      ...prev,
+      reminder_sms_template: DEFAULT_REMINDER_SMS_TEMPLATE,
+    }));
+  };
+
+  const getTemplatePreview = () => {
+    const tmpl = config.reminder_sms_template || DEFAULT_REMINDER_SMS_TEMPLATE;
+    const sampleClinic = clinicData?.name || "Oakridge Physical Therapy";
+    return String(tmpl)
+      .replace(/{patient_name}/g, "Sarah Jenkins")
+      .replace(/{clinic_name}/g, sampleClinic)
+      .replace(/{datetime}/g, "Tomorrow, Sep 2 at 10:30 AM");
   };
 
   const handleSave = async (e) => {
@@ -353,10 +383,10 @@ const NotificationSettings = ({ clinicData, onClinicUpdate }) => {
             },
             {
               key: "reminders_enabled",
-              label: "24-Hour Appointment Reminders",
-              desc: "Sends SMS 24 hours prior to scheduled visits with interactive confirm/cancel reply options.",
+              label: `${config.reminder_lead_time_hours || 24}-Hour Appointment Reminders`,
+              desc: `Sends SMS ${config.reminder_lead_time_hours || 24} hours prior to scheduled visits with interactive confirm/cancel reply options.`,
               icon: Clock,
-              badge: "24h Prior",
+              badge: `${config.reminder_lead_time_hours || 24}h Prior`,
             },
             {
               key: "followup_enabled",
@@ -427,6 +457,231 @@ const NotificationSettings = ({ clinicData, onClinicUpdate }) => {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── SECTION 1B: Reminder Cadence & SMS Template Editor ── */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider">
+              Reminder Lead Window & Custom SMS Template
+            </h4>
+          </div>
+          <span className="text-[11px] font-semibold text-on-surface-variant bg-surface-container px-2.5 py-1 rounded-full">
+            Appointment Outreach
+          </span>
+        </div>
+        <p className="text-xs text-on-surface-variant">
+          Control how far in advance reminders are sent and personalize the SMS template delivered to scheduled patients.
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 p-4 rounded-xl bg-surface-container/50 border border-surface-container">
+          {/* Left Column: Lead Time & Template Input */}
+          <div className="space-y-4">
+            <div>
+              <label className="overline mb-1.5 flex items-center gap-1.5 text-on-surface">
+                <Clock className="w-3.5 h-3.5 text-primary" />
+                <span>Reminder Dispatch Lead Time</span>
+              </label>
+              <select
+                value={config.reminder_lead_time_hours ?? 24}
+                onChange={(e) => handleChange("reminder_lead_time_hours", parseInt(e.target.value, 10))}
+                className="input-field text-xs bg-surface-container-highest text-on-surface py-2.5 px-3 rounded-lg border-none outline-none font-medium cursor-pointer w-full"
+              >
+                <option value={12}>12 Hours Prior (Same-Day Morning Dispatch)</option>
+                <option value={24}>24 Hours Prior (Recommended Default)</option>
+                <option value={48}>48 Hours Prior (2 Days Ahead)</option>
+                <option value={72}>72 Hours Prior (3 Days Ahead)</option>
+              </select>
+              <p className="text-[10px] text-on-surface-variant mt-1">
+                Patients receive their interactive SMS reminder {config.reminder_lead_time_hours || 24} hours before their appointment.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="overline flex items-center gap-1.5 text-on-surface">
+                  <FileText className="w-3.5 h-3.5 text-primary" />
+                  <span>Custom SMS Reminder Template</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleResetTemplate}
+                  className="flex items-center gap-1 text-[10px] text-primary hover:underline font-bold"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset Default</span>
+                </button>
+              </div>
+
+              <textarea
+                rows={4}
+                value={config.reminder_sms_template ?? DEFAULT_REMINDER_SMS_TEMPLATE}
+                onChange={(e) => handleChange("reminder_sms_template", e.target.value)}
+                placeholder={DEFAULT_REMINDER_SMS_TEMPLATE}
+                className="w-full text-xs bg-surface-container-highest text-on-surface p-3 rounded-lg border border-surface-container outline-none font-sans focus:border-primary/40 leading-relaxed resize-none"
+              />
+
+              {/* Dynamic Variable Insert Tags */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-on-surface-variant">Insert Dynamic Variables:</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { tag: "{patient_name}", label: "Patient Name" },
+                    { tag: "{clinic_name}", label: "Clinic Name" },
+                    { tag: "{datetime}", label: "Date & Time" },
+                  ].map((v) => (
+                    <button
+                      key={v.tag}
+                      type="button"
+                      onClick={() => handleInsertVariable(v.tag)}
+                      className="text-[10px] font-mono px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary font-semibold transition-all border border-primary/20"
+                    >
+                      + {v.tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Character & Segment Count */}
+              <div className="flex items-center justify-between text-[10px] text-on-surface-variant pt-1">
+                <span>
+                  {(config.reminder_sms_template || DEFAULT_REMINDER_SMS_TEMPLATE).length} characters
+                </span>
+                <span>
+                  {Math.ceil((config.reminder_sms_template || DEFAULT_REMINDER_SMS_TEMPLATE).length / 160) || 1} SMS segment(s)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Live Interactive SMS Mockup */}
+          <div className="flex flex-col">
+            <span className="overline mb-1.5 flex items-center gap-1.5 text-on-surface">
+              <Sparkles className="w-3.5 h-3.5 text-primary" />
+              <span>Live Patient SMS Preview</span>
+            </span>
+
+            <div className="flex-1 bg-surface-container-highest/80 rounded-xl p-4 border border-surface-container flex flex-col justify-between">
+              <div className="space-y-3">
+                {/* Header Mockup */}
+                <div className="flex items-center justify-between border-b border-surface-container pb-2 text-[10px] text-on-surface-variant font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <Smartphone className="w-3.5 h-3.5 text-primary" />
+                    <span>Patient Handset View</span>
+                  </div>
+                  <span>Automated SMS</span>
+                </div>
+
+                {/* Incoming SMS Bubble */}
+                <div className="bg-[#e8f5e9] text-[#1b5e20] p-3.5 rounded-2xl rounded-tl-sm text-xs leading-relaxed shadow-xs border border-[#c8e6c9]">
+                  <p className="font-medium">{getTemplatePreview()}</p>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-surface-container text-[10px] text-on-surface-variant flex items-center justify-between">
+                <span className="flex items-center gap-1 text-primary font-medium">
+                  <CheckCircle2 className="w-3 h-3" /> Dynamic tags populate per appointment
+                </span>
+                <span className="font-mono text-[9px] bg-surface-container px-1.5 py-0.5 rounded">
+                  Bilingual / TCPA Safe
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── SECTION 1C: TCPA Quiet Hours & Curfew Protection ──── */}
+      <div className="space-y-4 pt-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary" />
+            <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider">
+              TCPA Quiet Hours & Curfew Protection
+            </h4>
+          </div>
+          <span className="text-[11px] font-semibold text-[#1b5e20] bg-[#e8f5e9] px-2.5 py-1 rounded-full border border-[#c8e6c9]">
+            TCPA 47 CFR § 64.1200
+          </span>
+        </div>
+        <p className="text-xs text-on-surface-variant">
+          Enforce quiet hour windows to ensure automated patient calls and SMS communications strictly respect nighttime curfews.
+        </p>
+
+        <div className="p-4 rounded-xl bg-surface-container/50 border border-surface-container space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-surface-container">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                <Clock className="w-4.5 h-4.5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-on-surface">Enable Automated Curfew Protection</p>
+                <p className="text-[11px] text-on-surface-variant mt-0.5">
+                  Holds any outbound call or SMS attempt scheduled during nighttime hours until the morning window opens.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleToggle("quiet_hours_enabled")}
+              className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none flex-shrink-0 ${
+                config.quiet_hours_enabled !== false ? "bg-[#7dbd42]" : "bg-surface-container-highest"
+              }`}
+              aria-label="Toggle TCPA Quiet Hours"
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${
+                  config.quiet_hours_enabled !== false ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="overline mb-1.5 flex items-center gap-1.5 text-on-surface">
+                <span>Quiet Hours Start (Evening Curfew)</span>
+              </label>
+              <select
+                value={config.quiet_hours_start || "21:00"}
+                onChange={(e) => handleChange("quiet_hours_start", e.target.value)}
+                disabled={config.quiet_hours_enabled === false}
+                className="input-field text-xs bg-surface-container-highest text-on-surface py-2 px-3 rounded-lg border-none outline-none font-medium w-full cursor-pointer disabled:opacity-50"
+              >
+                <option value="20:00">8:00 PM (20:00) — Early Evening</option>
+                <option value="21:00">9:00 PM (21:00) — Federal TCPA Mandatory Cutoff</option>
+                <option value="22:00">10:00 PM (22:00) — Late Evening</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="overline mb-1.5 flex items-center gap-1.5 text-on-surface">
+                <span>Quiet Hours End (Morning Window Opens)</span>
+              </label>
+              <select
+                value={config.quiet_hours_end || "08:00"}
+                onChange={(e) => handleChange("quiet_hours_end", e.target.value)}
+                disabled={config.quiet_hours_enabled === false}
+                className="input-field text-xs bg-surface-container-highest text-on-surface py-2 px-3 rounded-lg border-none outline-none font-medium w-full cursor-pointer disabled:opacity-50"
+              >
+                <option value="07:00">7:00 AM (07:00)</option>
+                <option value="08:00">8:00 AM (08:00) — Federal TCPA Permitted Start</option>
+                <option value="09:00">9:00 AM (09:00) — Clinic Business Hours</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-surface-container-highest/60 border border-surface-container flex items-start gap-2.5 text-[11px] text-on-surface-variant">
+            <Info className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-on-surface">TCPA Compliance Notice: </span>
+              Under the Federal Telephone Consumer Protection Act (47 U.S.C. § 227 and 47 C.F.R. § 64.1200), telephone solicitations and automated notifications are prohibited before 8:00 AM or after 9:00 PM in the patient's local timezone. Bytelytic OS automatically enforces this boundary based on clinic timezone (<code className="font-mono">{clinicData?.timezone || "America/New_York"}</code>).
+            </div>
+          </div>
         </div>
       </div>
 

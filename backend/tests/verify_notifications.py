@@ -287,8 +287,97 @@ async def run_tests():
         assert resp.json()["success"] is True
         print("  [OK] POST /notifications/{id}/read verified 100%!")
 
+    # Test 8: TCPA Quiet Hours Compliance
+    print("\n[TEST 8] Testing TCPA Quiet Hours Compliance Engine...")
+    from src.services.tcpa_service import tcpa_service
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    ny_tz = ZoneInfo("America/New_York")
+    
+    # 8.1 Late night: 11:30 PM EDT (TCPA curfew)
+    night_time = datetime(2026, 9, 1, 23, 30, tzinfo=ny_tz)
+    is_quiet, reason = tcpa_service.is_quiet_hours("America/New_York", now_override=night_time)
+    assert is_quiet is True, "Expected 11:30 PM to be quiet hours"
+    assert "TCPA Quiet Hours" in reason
+    print("  [OK] 11:30 PM correctly identified as TCPA quiet hours!")
+
+    # 8.2 Early morning: 6:30 AM EDT (TCPA curfew)
+    morning_time = datetime(2026, 9, 1, 6, 30, tzinfo=ny_tz)
+    is_quiet, reason = tcpa_service.is_quiet_hours("America/New_York", now_override=morning_time)
+    assert is_quiet is True, "Expected 6:30 AM to be quiet hours"
+    assert "TCPA Quiet Hours" in reason
+    print("  [OK] 6:30 AM correctly identified as TCPA quiet hours!")
+
+    # 8.3 Permitted business hours: 2:15 PM EDT (Allowed)
+    day_time = datetime(2026, 9, 1, 14, 15, tzinfo=ny_tz)
+    is_quiet, reason = tcpa_service.is_quiet_hours("America/New_York", now_override=day_time)
+    assert is_quiet is False, "Expected 2:15 PM to be permitted"
+    print("  [OK] 2:15 PM correctly allowed under TCPA!")
+
+    # 8.4 Custom clinic quiet hours (e.g. 20:00 to 08:30)
+    custom_conf = {
+        "quiet_hours_enabled": True,
+        "quiet_hours_start": "20:00",
+        "quiet_hours_end": "08:30"
+    }
+    # 8:15 PM (20:15) with custom start 20:00
+    evening_time = datetime(2026, 9, 1, 20, 15, tzinfo=ny_tz)
+    is_quiet, reason = tcpa_service.is_quiet_hours("America/New_York", notifications_config=custom_conf, now_override=evening_time)
+    assert is_quiet is True, "Expected 8:15 PM to be quiet hours under custom config"
+    assert "Clinic Quiet Hours Active" in reason
+    print("  [OK] Custom clinic quiet hours (20:00-08:30) enforced correctly!")
+
+    # Test 9: Reminder Lead Time & Custom SMS Template Rendering
+    print("\n[TEST 9] Testing Reminder Lead Time & Custom Template Rendering...")
+    from src.services.sms_service import sms_service
+
+    mock_appt = {
+        "id": "appt-test-lead",
+        "clinic_id": "clinic-test-uuid",
+        "datetime": "2026-09-02T10:00:00Z",
+        "patient_name": "Emma Watson",
+        "patient_phone": "+15552223344",
+        "clinic_name": "Sunrise Medical Care",
+        "patients": {"name": "Emma Watson", "phone": "+15552223344"}
+    }
+    custom_clinic_notifs = {
+        **mock_clinic_data,
+        "notifications_config": {
+            **mock_clinic_data["notifications_config"],
+            "reminder_lead_time_hours": 48,
+            "reminder_sms_template": "Hello {patient_name}! Reminder from {clinic_name} for your visit at {datetime}. Reply YES to confirm.",
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": "21:00",
+            "quiet_hours_end": "08:00",
+        }
+    }
+
+    with patch("src.services.sms_service.supabase") as mock_sup, \
+         patch("src.services.sms_service.sms_service.send", new_callable=AsyncMock) as mock_send, \
+         patch("src.services.tcpa_service.tcpa_service.is_quiet_hours", return_value=(False, "Allowed")):
+        
+        # Configure select responses: first appt, second clinic
+        mock_sup.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+            MagicMock(data=mock_appt),
+            MagicMock(data=custom_clinic_notifs),
+        ]
+        mock_sup.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[mock_appt])
+        mock_send.return_value = {"success": True, "data": {"message_id": "msg-123"}}
+
+        send_res = await sms_service.send_reminder("appt-test-lead")
+        assert send_res["success"] is True
+        
+        # Verify that custom template was populated accurately
+        call_kwargs = mock_send.call_args.kwargs
+        rendered_body = call_kwargs.get("body", "")
+        assert "Hello Emma Watson!" in rendered_body
+        assert "Sunrise Medical Care" in rendered_body
+        assert "Reply YES to confirm." in rendered_body
+        print("  [OK] Custom SMS template rendered successfully with patient tokens!")
+
     print("\n==================================================")
-    print("ALL 7 NOTIFICATION AUDIT & ROUTING TESTS PASSED 100%!")
+    print("ALL 9 NOTIFICATION, TCPA & TEMPLATE AUDIT TESTS PASSED 100%!")
     print("==================================================")
 
 if __name__ == "__main__":

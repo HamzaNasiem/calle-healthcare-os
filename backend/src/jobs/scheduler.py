@@ -77,12 +77,41 @@ async def process_reminders():
     log.info("Running process_reminders job...")
     clinics = await get_all_clinics()
     now = datetime.datetime.now(datetime.timezone.utc)
-    in24h = now + datetime.timedelta(hours=24)
     
     for cid in clinics:
         try:
-            # Find appointments in next 24 hours that haven't received a reminder
-            res = supabase.table("appointments").select("id").eq("clinic_id", cid).in_("status", ["scheduled", "confirmed"]).eq("reminder_sent", False).gte("datetime", now.isoformat()).lte("datetime", in24h.isoformat()).execute()
+            # Check clinic notifications configuration
+            clinic_res = supabase.table("clinics").select("notifications_config, business_hours, timezone").eq("id", cid).single().execute()
+            c_conf = {}
+            c_tz = "America/New_York"
+            if clinic_res.data:
+                c_conf = clinic_res.data.get("notifications_config") or {}
+                if not isinstance(c_conf, dict):
+                    b_hours = clinic_res.data.get("business_hours") or {}
+                    c_conf = b_hours.get("_notifications_config") if isinstance(b_hours, dict) else {}
+                if not isinstance(c_conf, dict):
+                    c_conf = {}
+                c_tz = clinic_res.data.get("timezone") or "America/New_York"
+
+            if c_conf.get("reminders_enabled") is False:
+                continue
+
+            # Respect TCPA quiet hours before processing reminder batch
+            from ..services.tcpa_service import tcpa_service
+            is_quiet, quiet_reason = tcpa_service.is_quiet_hours(timezone_str=c_tz, notifications_config=c_conf)
+            if is_quiet:
+                log.info(f"[process_reminders] Clinic {cid} quiet hours active ({quiet_reason}). Holding reminder batch.")
+                continue
+
+            # Dynamic reminder lead time (12h, 24h, 48h, 72h - default 24h)
+            try:
+                lead_hours = int(c_conf.get("reminder_lead_time_hours") or 24)
+            except Exception:
+                lead_hours = 24
+            lead_window = now + datetime.timedelta(hours=lead_hours)
+
+            # Find appointments in lead window that haven't received a reminder
+            res = supabase.table("appointments").select("id").eq("clinic_id", cid).in_("status", ["scheduled", "confirmed"]).eq("reminder_sent", False).gte("datetime", now.isoformat()).lte("datetime", lead_window.isoformat()).execute()
             appts = res.data or []
             if not appts:
                 continue
@@ -695,9 +724,45 @@ async def purge_expired_data():
             None,
             lambda: supabase.table("appointments").delete().lt("created_at", cutoff_date).execute()
         )
-        appts_deleted = len(appts_res.data) if appts_res.data else 0
-        
-        log.info(f"HIPAA Purge completed. Deleted: {sms_deleted} SMS, {calls_deleted} calls, {appts_deleted} appointments older than 7 years.")
+        # 4. Enforce HIPAA 24h Recording Auto-Purge (Data Minimization)
+        # Automatically purge voice audio recording URLs older than 24 hours
+        rec_cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24)).isoformat()
+        rec_purged = 0
+        try:
+            old_calls = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase.table("calls").select("id").is_not("recording_url", "null").lt("created_at", rec_cutoff).execute()
+            )
+            if old_calls.data:
+                for oc in old_calls.data:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda c_id=oc["id"]: supabase.table("calls").update({"recording_url": None}).eq("id", c_id).execute()
+                    )
+                rec_purged += len(old_calls.data)
+        except Exception as rec_err:
+            log.warning(f"Failed to auto-purge calls recordings: {rec_err}")
+
+        try:
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            old_logs = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase.table("call_logs").select("id").is_not("recording_url", "null").lt("created_at", rec_cutoff).execute()
+            )
+            if old_logs.data:
+                for ol in old_logs.data:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda cl_id=ol["id"]: supabase.table("call_logs").update({
+                            "recording_url": None,
+                            "recording_purged_at": now_iso
+                        }).eq("id", cl_id).execute()
+                    )
+                rec_purged += len(old_logs.data)
+        except Exception as log_rec_err:
+            log.warning(f"Failed to auto-purge call_logs recordings: {log_rec_err}")
+
+        log.info(f"HIPAA Purge completed. Deleted: {sms_deleted} SMS, {calls_deleted} calls, {appts_deleted} appointments older than 7 years. Auto-purged {rec_purged} audio recordings older than 24h.")
     except Exception as e:
         log.error(f"Failed to run HIPAA purge_expired_data: {str(e)}")
 

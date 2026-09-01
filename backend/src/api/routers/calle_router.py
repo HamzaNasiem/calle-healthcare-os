@@ -878,14 +878,36 @@ async def run_confirmation_campaign(
     """
     clinic_id = auth.clinic_id
 
+    clinic_tz = "America/New_York"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("clinics").select("name").eq("id", clinic_id).execute()
+            lambda: supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
         )
-        clinic_name = clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic"
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/New_York"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
+        else:
+            clinic_name = "Your Clinic"
     except Exception:
         clinic_name = "Your Clinic"
+
+    # Enforce TCPA quiet hours before triggering outbound calls
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    if is_quiet:
+        log.info(f"[calle_router] {quiet_reason}. Holding outbound confirmation batch for clinic {clinic_id}.")
+        return {
+            "message": f"Calls held: {quiet_reason}",
+            "queued": 0,
+            "quiet_hours_active": True
+        }
 
     # Get tomorrow's appointments
     tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date()

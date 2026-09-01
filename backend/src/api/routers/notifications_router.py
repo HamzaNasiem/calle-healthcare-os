@@ -23,6 +23,31 @@ class NotificationConfigUpdate(BaseModel):
     notifications_config: Dict[str, Any]
 
 
+DEFAULT_NOTIFICATIONS_CONFIG = {
+    "booking_confirmation_enabled": True,
+    "cancellation_confirmation_enabled": True,
+    "reminders_enabled": True,
+    "recall_enabled": True,
+    "followup_enabled": True,
+    "insurance_enabled": True,
+    "email_daily_report_enabled": True,
+    "email_quota_alerts_enabled": True,
+    "email_staff_alerts_enabled": True,
+    "staff_alert_email": "",
+    "staff_alert_phone": "",
+    "alert_on_negative_sentiment": True,
+    "alert_on_missed_calls": True,
+    "alert_on_noshow": True,
+    "sound_alerts_enabled": True,
+    "browser_notifications_enabled": False,
+    "reminder_lead_time_hours": 24,
+    "reminder_sms_template": "Hi {patient_name}, your appointment at {clinic_name} is confirmed for {datetime}. Reply CONFIRM or CANCEL.",
+    "quiet_hours_enabled": True,
+    "quiet_hours_start": "21:00",
+    "quiet_hours_end": "08:00",
+}
+
+
 @router.get("")
 async def get_notifications(
     auth: AuthenticatedUser = Depends(require_permission("dashboard:read")),
@@ -92,7 +117,7 @@ async def get_notification_config(
     """Fetch current clinic notification preferences configuration."""
     clinic_id = auth.clinic_id
     try:
-        res = supabase_read.table("clinics").select("notifications_config, business_hours, owner_email, primary_doctor_phone").eq("id", clinic_id).single().execute()
+        res = supabase_read.table("clinics").select("notifications_config, business_hours, owner_email, primary_doctor_phone, timezone").eq("id", clinic_id).single().execute()
         if not res.data:
             raise HTTPException(status_code=404, detail="Clinic not found")
         
@@ -103,13 +128,16 @@ async def get_notification_config(
             conf = b_hrs.get("_notifications_config") if isinstance(b_hrs, dict) else {}
         if not isinstance(conf, dict):
             conf = {}
+
+        merged = {**DEFAULT_NOTIFICATIONS_CONFIG, **conf}
         
         return {
             "data": {
-                **conf,
+                **merged,
                 "_defaults": {
                     "owner_email": c.get("owner_email"),
                     "doctor_phone": c.get("primary_doctor_phone"),
+                    "timezone": c.get("timezone") or "America/New_York",
                 }
             }
         }
@@ -125,10 +153,11 @@ async def update_notification_config(
     """Update clinic notification preferences configuration."""
     clinic_id = auth.clinic_id
     try:
+        merged = {**DEFAULT_NOTIFICATIONS_CONFIG, **payload.notifications_config}
         res = supabase.table("clinics").update({
-            "notifications_config": payload.notifications_config
+            "notifications_config": merged
         }).eq("id", clinic_id).execute()
-        return {"success": True, "data": payload.notifications_config}
+        return {"success": True, "data": merged}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

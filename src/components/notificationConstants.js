@@ -18,4 +18,13 @@ export const DEFAULT_NOTIFICATIONS_CONFIG = {
   alert_on_noshow: true,
   sound_alerts_enabled: true,
   browser_notifications_enabled: false,
+  reminder_lead_time_hours: 24,
+  reminder_sms_template: "Hi {patient_name}, your appointment at {clinic_name} is confirmed for {datetime}. Reply CONFIRM or CANCEL.",
+  quiet_hours_enabled: true,
+  quiet_hours_start: "21:00",
+  quiet_hours_end: "08:00",
 };
+
+export const DEFAULT_REMINDER_SMS_TEMPLATE =
+  "Hi {patient_name}, your appointment at {clinic_name} is confirmed for {datetime}. Reply CONFIRM or CANCEL.";
+
