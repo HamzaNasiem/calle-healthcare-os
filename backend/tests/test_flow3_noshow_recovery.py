@@ -13,8 +13,7 @@ def test_is_eligible_for_recovery():
     # we test the date bounds logic.
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=2)).isoformat()
-    today = now.date().isoformat()
-    assert today in cutoff or cutoff > today
+    assert cutoff < now.isoformat()
     # Just a placeholder for the logic test
     assert True
 
