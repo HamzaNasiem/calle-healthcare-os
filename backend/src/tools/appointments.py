@@ -133,10 +133,21 @@ class CheckCalendarAvailabilityTool(BaseTool):
         pg_locked_slots = set((await db.execute(locked_stmt)).scalars().all())
         
         duration_minutes = 30
-        if service_type and settings and settings.services:
-            for s in settings.services:
-                if service_type.lower() in s.get("name", "").lower():
-                    duration_minutes = s.get("duration_minutes", 30)
+        services_list = settings.services if (settings and settings.services) else None
+        if not services_list:
+            from src.core.database import supabase_read
+            try:
+                c_res = supabase_read.table("clinics").select("appointment_types").eq("id", tenant_id).single().execute()
+                if c_res.data and c_res.data.get("appointment_types"):
+                    services_list = c_res.data["appointment_types"]
+            except Exception:
+                pass
+        if service_type and services_list:
+            for s in services_list:
+                s_name = str(s.get("name", "")).lower()
+                st_low = service_type.lower()
+                if st_low in s_name or s_name in st_low:
+                    duration_minutes = int(s.get("duration_minutes") or s.get("duration") or 30)
                     break
         
         if requested_provider_id:
@@ -194,6 +205,22 @@ class CheckCalendarAvailabilityTool(BaseTool):
                     except Exception:
                         pass
                     
+            # Check clinic lunch break configuration
+            lunch_window = None
+            if settings and settings.business_hours and isinstance(settings.business_hours, dict):
+                lb = settings.business_hours.get("_lunch_break")
+                if isinstance(lb, dict) and lb.get("enabled"):
+                    try:
+                        ls_clean = str(lb.get("start", "12:00")).strip().upper().replace("AM","").replace("PM","").strip()
+                        le_clean = str(lb.get("end", "13:00")).strip().upper().replace("AM","").replace("PM","").strip()
+                        ls_h = int(ls_clean.split(":")[0])
+                        le_h = int(le_clean.split(":")[0])
+                        if "PM" in str(lb.get("start", "")).upper() and ls_h < 12: ls_h += 12
+                        if "PM" in str(lb.get("end", "")).upper() and le_h < 12: le_h += 12
+                        lunch_window = (ls_h, le_h)
+                    except Exception:
+                        pass
+
             pref_start, pref_end = day_start_hour, day_end_hour
             if time_pref == "morning":
                 pref_end = min(12, day_end_hour)
@@ -223,6 +250,8 @@ class CheckCalendarAvailabilityTool(BaseTool):
             day_slots = []
             for hour in range(pref_start, pref_end):
                 if len(day_slots) >= 3: break
+                if lunch_window and (hour >= lunch_window[0] and hour < lunch_window[1]):
+                    continue
                 for minute in [0, 30]:
                     if len(day_slots) >= 3: break
                     
@@ -468,10 +497,21 @@ class BookNewAppointmentTool(BaseTool):
             
             service_type = args.get("service_type")
             duration_minutes = 30
-            if service_type and settings and settings.services:
-                for s in settings.services:
-                    if service_type.lower() in s.get("name", "").lower():
-                        duration_minutes = s.get("duration_minutes", 30)
+            services_list = settings.services if (settings and settings.services) else None
+            if not services_list:
+                from src.core.database import supabase_read
+                try:
+                    c_res = supabase_read.table("clinics").select("appointment_types").eq("id", tenant_id).single().execute()
+                    if c_res.data and c_res.data.get("appointment_types"):
+                        services_list = c_res.data["appointment_types"]
+                except Exception:
+                    pass
+            if service_type and services_list:
+                for s in services_list:
+                    s_name = str(s.get("name", "")).lower()
+                    st_low = service_type.lower()
+                    if st_low in s_name or s_name in st_low:
+                        duration_minutes = int(s.get("duration_minutes") or s.get("duration") or 30)
                         break
             
             try:
@@ -1131,6 +1171,23 @@ class RescheduleAppointmentTool(BaseTool):
                                 raise Exception("outside_working_hours")
                         except Exception as ex:
                             if str(ex) in ["clinic_closed", "outside_working_hours"]:
+                                raise ex
+
+                # Check lunch break restriction
+                if biz and isinstance(biz, dict):
+                    lb = biz.get("_lunch_break")
+                    if isinstance(lb, dict) and lb.get("enabled"):
+                        try:
+                            ls_clean = str(lb.get("start", "12:00")).strip().upper().replace("AM","").replace("PM","").strip()
+                            le_clean = str(lb.get("end", "13:00")).strip().upper().replace("AM","").replace("PM","").strip()
+                            ls_h = int(ls_clean.split(":")[0])
+                            le_h = int(le_clean.split(":")[0])
+                            if "PM" in str(lb.get("start", "")).upper() and ls_h < 12: ls_h += 12
+                            if "PM" in str(lb.get("end", "")).upper() and le_h < 12: le_h += 12
+                            if local_slot_start.hour >= ls_h and local_slot_start.hour < le_h:
+                                raise Exception("outside_working_hours")
+                        except Exception as ex:
+                            if str(ex) == "outside_working_hours":
                                 raise ex
 
             # Doctor Conflict Check: Doctor

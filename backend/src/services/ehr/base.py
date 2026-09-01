@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
-from typing import Optional
+﻿from abc import ABC, abstractmethod
+from typing import Optional, List, Dict, Any
 
 
 class EMRIntegrationBase(ABC):
@@ -20,3 +20,11 @@ class EMRIntegrationBase(ABC):
     @abstractmethod
     async def verify_connection(self, clinic_id: str) -> bool:
         """Ping EHR to verify credentials are valid."""
+
+    async def create_clinical_note(self, clinic_id: str, note_data: dict) -> Optional[str]:
+        """Push CALL-E clinical note or call summary to EHR. Returns note/encounter ID or None."""
+        return None
+
+    async def fetch_appointments(self, clinic_id: str, start_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Fetch recent appointments from EHR for inbound sync. Returns list of appointment dicts."""
+        return []

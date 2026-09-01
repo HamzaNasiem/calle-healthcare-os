@@ -353,6 +353,7 @@ class LocalPostgresTableQuery:
             res = Response()
             res.data = [] if not self.is_single else None
             res.count = 0
+            res.error = str(e)
             return res
         finally:
             try:
@@ -631,6 +632,9 @@ def update_clinic(clinic_id: str, updates: dict) -> dict:
             local_cache.set(f"clinic_owner_{new_owner}", updated_data)
         return updated_data
         
+    if hasattr(up_res, "error") and up_res.error:
+        raise RuntimeError(f"Failed to update clinic in PostgreSQL database: {up_res.error}")
+
     return get_clinic_with_billing(clinic_id)
 
 def update_clinic_billing(clinic_id: str, billing_updates: dict) -> dict:

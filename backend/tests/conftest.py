@@ -46,14 +46,20 @@ mock_execute_res = MagicMock()
 mock_execute_res.data = []
 mock_execute_res.count = 0
 
+class MockQuery:
+    def __init__(self, res):
+        self._res = res
+    def __getattr__(self, name):
+        if name == "execute":
+            return lambda: self._res
+        return lambda *args, **kwargs: self
+
 # Mock table select chain
 mock_table_mock = MagicMock()
-mock_table_mock.select.return_value.execute.return_value = mock_execute_res
-mock_table_mock.select.return_value.eq.return_value.execute.return_value = mock_execute_res
-mock_table_mock.select.return_value.or_.return_value.execute.return_value = mock_execute_res
-mock_table_mock.insert.return_value.execute.return_value = mock_execute_res
-mock_table_mock.update.return_value.execute.return_value = mock_execute_res
-mock_table_mock.delete.return_value.execute.return_value = mock_execute_res
+mock_table_mock.select.side_effect = lambda *args, **kwargs: MockQuery(mock_execute_res)
+mock_table_mock.insert.side_effect = lambda *args, **kwargs: MockQuery(mock_execute_res)
+mock_table_mock.update.side_effect = lambda *args, **kwargs: MockQuery(mock_execute_res)
+mock_table_mock.delete.side_effect = lambda *args, **kwargs: MockQuery(mock_execute_res)
 
 mock_db.table.return_value = mock_table_mock
 mock_db_read.table.return_value = mock_table_mock

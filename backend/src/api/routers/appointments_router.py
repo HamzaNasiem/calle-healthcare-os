@@ -119,6 +119,32 @@ async def create_appointment(appt: AppointmentCreate, request: Request, auth: Au
             except Exception as pat_err:
                 print(f"[AppointmentsRouter] Patient resolution note: {pat_err}")
 
+        # Resolve duration, fee, and CPT code from clinic appointment_types if available
+        fee_cents = None
+        cpt_code = None
+        try:
+            clinic_res = supabase_read.table("clinics").select("appointment_types").eq("id", clinic_id).single().execute()
+            if clinic_res.data and clinic_res.data.get("appointment_types"):
+                req_t = (appt.appointment_type or "").strip().lower()
+                for at in clinic_res.data["appointment_types"]:
+                    if isinstance(at, dict):
+                        at_name = str(at.get("name", "")).strip().lower()
+                        if at_name == req_t or req_t in at_name or at_name in req_t:
+                            fee = at.get("fee") if at.get("fee") is not None else at.get("price")
+                            if fee is not None:
+                                fee_cents = int(float(fee) * 100)
+                            if at.get("duration_minutes") and (not appt.duration_minutes or appt.duration_minutes == 30):
+                                appt.duration_minutes = int(at.get("duration_minutes"))
+                            if at.get("cpt_code"):
+                                cpt_code = at.get("cpt_code")
+                            break
+        except Exception as e:
+            print(f"[AppointmentsRouter] Appointment type resolution note: {e}")
+
+        final_notes = appt.notes or ""
+        if cpt_code and f"CPT: {cpt_code}" not in final_notes:
+            final_notes = f"{final_notes} [CPT: {cpt_code}]".strip()
+
         insert_data = {
             "clinic_id": clinic_id,
             "patient_id": patient_id,
@@ -132,8 +158,10 @@ async def create_appointment(appt: AppointmentCreate, request: Request, auth: Au
             "google_event_id": google_event_id,
             "status": "scheduled",
             "booked_by": "staff",
-            "notes": appt.notes
+            "notes": final_notes or None
         }
+        if fee_cents is not None:
+            insert_data["revenue_amount"] = fee_cents
         
         res = supabase.table("appointments").insert(insert_data).execute()
         created_appt = res.data[0]

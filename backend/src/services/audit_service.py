@@ -103,17 +103,16 @@ class AuditService:
             recent.insert(0, insert_data)
             local_cache.set(cache_key, recent[:200], ttl=3600)
 
-            def _is_valid_uuid(val):
+            def _safe_uuid(val, default="d3b07384-d113-46a6-a719-38cf89235d54"):
                 if not val:
-                    return False
+                    return default
                 try:
-                    uuid.UUID(str(val))
-                    return True
+                    return str(uuid.UUID(str(val)))
                 except Exception:
-                    return False
+                    return str(uuid.uuid5(uuid.NAMESPACE_DNS, str(val)))
 
-            db_clinic_id = c_id if _is_valid_uuid(c_id) else None
-            db_user_id = u_id if _is_valid_uuid(u_id) else None
+            db_clinic_id = _safe_uuid(c_id)
+            db_user_id = str(u_id) if u_id else "demo-user-001"
 
             db_insert_data = {
                 "id": entry_id,
@@ -121,9 +120,12 @@ class AuditService:
                 "user_id": db_user_id,
                 "user_email": user_email or "admin@sunriseclinic.com",
                 "action": action,
+                "resource_type": resource_type or (log_details.get("resource_type") if log_details else None) or "audit",
+                "resource_id": str(resource_id) if resource_id else None,
                 "details": log_details,
                 "ip_address": ip_address or "127.0.0.1",
-                "user_agent": user_agent or "Web Browser"
+                "user_agent": user_agent or "Web Browser",
+                "created_at": now_iso
             }
 
             # Executed in a separate thread-pool since supabase-py is synchronous

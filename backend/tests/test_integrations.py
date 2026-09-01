@@ -42,6 +42,13 @@ def client():
         yield c
 
 
+import base64
+from src.core.encryption import phi_crypto
+
+MOCK_RAW_CALLE_KEY = "iams_live_018f7d9a"
+MOCK_CALLE_KEY_ENC = base64.b64encode(phi_crypto.encrypt(MOCK_RAW_CALLE_KEY)).decode("utf-8")
+
+
 def _mock_clinic_data(
     google_refresh_token="mock_refresh_token",
     telnyx_number="+15755734355",
@@ -49,7 +56,9 @@ def _mock_clinic_data(
     retell_agent_id="agent_1234567890",
     stripe_customer_id="cus_test123",
     subscription_status="active",
-    subscription_plan="growth"
+    subscription_plan="growth",
+    calle_api_key_enc=MOCK_CALLE_KEY_ENC,
+    calle_enabled=True,
 ):
     return {
         "id": "clinic-integration-123",
@@ -59,6 +68,8 @@ def _mock_clinic_data(
         "twilio_number": twilio_number,
         "telnyx_number": telnyx_number,
         "retell_agent_id": retell_agent_id,
+        "calle_api_key_enc": calle_api_key_enc,
+        "calle_enabled": calle_enabled,
         "google_calendar_id": "primary",
         "google_refresh_token": google_refresh_token,
         "stripe_customer_id": stripe_customer_id,
@@ -111,6 +122,10 @@ def test_get_integrations_status_connected(client):
         assert data["data"]["retell"]["connected"] is True
         assert data["data"]["retell"]["agent_id"] == "agent_1234567890"
         
+        # Check CALL-E
+        assert data["data"]["calle"]["connected"] is True
+        assert "••••••" in data["data"]["calle"]["api_key_masked"]
+
         # Check Stripe
         assert data["data"]["stripe"]["connected"] is True
         assert data["data"]["stripe"]["subscription_status"] == "active"
@@ -126,7 +141,9 @@ def test_get_integrations_status_disconnected(client):
         retell_agent_id=None,
         stripe_customer_id=None,
         subscription_status="trial",
-        subscription_plan="starter"
+        subscription_plan="starter",
+        calle_api_key_enc=None,
+        calle_enabled=False,
     )
     mock_res = MagicMock()
     mock_res.data = clinic
@@ -144,6 +161,7 @@ def test_get_integrations_status_disconnected(client):
         data = resp.json()
         assert data["data"]["google_calendar"]["connected"] is False
         assert data["data"]["telnyx"]["connected"] is False
+        assert data["data"]["calle"]["connected"] is False
         assert data["data"]["retell"]["connected"] is False
 
 
@@ -175,6 +193,42 @@ def test_update_integrations_settings(client):
         data = resp.json()
         assert data["success"] is True
         assert data["data"]["telnyx"]["phone_number"] == "+15759998888"
+
+
+def test_update_calle_api_key(client):
+    """Test PUT /api/v1/integrations/settings securely encrypts and stores calle_api_key."""
+    existing = _mock_clinic_data(calle_api_key_enc=None, calle_enabled=False)
+    new_raw_key = "iams_live_newkey9999"
+    new_enc_key = base64.b64encode(phi_crypto.encrypt(new_raw_key)).decode("utf-8")
+    updated = _mock_clinic_data(calle_api_key_enc=new_enc_key, calle_enabled=True)
+
+    mock_existing_res = MagicMock()
+    mock_existing_res.data = existing
+
+    with patch("src.api.routers.integrations_router.supabase_read") as mock_sr, \
+         patch("src.api.routers.integrations_router.db_update_clinic", return_value=updated) as mock_update, \
+         patch("src.api.routers.integrations_router.audit_service.log", new_callable=AsyncMock) as mock_audit:
+
+        chain = MagicMock()
+        chain.select.return_value = chain
+        chain.eq.return_value = chain
+        chain.single.return_value = chain
+        chain.execute.return_value = mock_existing_res
+        mock_sr.table.return_value = chain
+
+        resp = client.put("/api/v1/integrations/settings", json={"calle_api_key": new_raw_key})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["data"]["calle"]["connected"] is True
+        assert "••••••" in data["data"]["calle"]["api_key_masked"]
+        # Verify db_update_clinic was called with encrypted key, not raw key
+        mock_update.assert_called_once()
+        passed_updates = mock_update.call_args[0][1]
+        assert "calle_api_key_enc" in passed_updates
+        assert passed_updates["calle_api_key_enc"] is not None
+        assert passed_updates.get("calle_enabled") is True
+        assert "calle_api_key" not in passed_updates
 
 
 def test_disconnect_google_calendar(client):
@@ -249,12 +303,17 @@ def test_integration_connectivity_checks(client):
         assert resp_twilio.status_code == 200
         assert resp_twilio.json()["success"] is True
 
-        # 4. Retell Test
+        # 4. CALL-E Test
+        resp_calle = client.post("/api/v1/integrations/test/calle")
+        assert resp_calle.status_code == 200
+        assert resp_calle.json()["success"] is True
+
+        # 5. Retell Test
         resp_retell = client.post("/api/v1/integrations/test/retell")
         assert resp_retell.status_code == 200
         assert resp_retell.json()["success"] is True
 
-        # 5. Stripe Test
+        # 6. Stripe Test
         resp_stripe = client.post("/api/v1/integrations/test/stripe")
         assert resp_stripe.status_code == 200
         assert resp_stripe.json()["success"] is True

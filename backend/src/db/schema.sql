@@ -29,6 +29,13 @@ CREATE TABLE clinics (
   appointment_types        JSONB       DEFAULT '[{"name":"Initial Eval","duration":60},{"name":"Follow-up","duration":30}]',
   recall_days              INTEGER[]   DEFAULT '{30,60,90}',
   monthly_revenue_per_visit INTEGER   DEFAULT 150,
+  address                  TEXT        DEFAULT '100 Michigan Avenue',
+  suite                    TEXT        DEFAULT 'Suite 400',
+  state                    TEXT        DEFAULT 'IL',
+  zip_code                 TEXT        DEFAULT '60601',
+  emergency_protocols      TEXT        DEFAULT 'If caller reports chest pain, severe shortness of breath, sudden numbness, or life-threatening symptoms, immediately direct them to hang up and call 911 or proceed to the nearest emergency department.',
+  transfer_phone_number    TEXT,
+  telnyx_number            TEXT,
   is_active                BOOLEAN     DEFAULT true,
   created_at               TIMESTAMPTZ DEFAULT NOW()
 );

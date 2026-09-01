@@ -15,7 +15,7 @@ from ...services.email_service import email_service
 
 router = APIRouter(prefix="/staff", tags=["Staff"])
 
-VALID_ROLES = ["owner", "doctor", "front_desk", "read_only"]
+VALID_ROLES = ["owner", "doctor", "clinician", "front_desk", "staff", "read_only", "viewer"]
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -65,15 +65,25 @@ async def list_staff(auth: AuthenticatedUser = Depends(require_role("owner"))):
         except Exception:
             all_users = {}
 
+        # Also fetch from local users table for complete fallback
+        local_db_users = {}
+        try:
+            u_res = supabase_read.table("users").select("id, email, full_name, role").eq("tenant_id", auth.clinic_id).execute()
+            if u_res.data:
+                local_db_users = {str(u["id"]): u for u in u_res.data}
+        except Exception:
+            pass
+
         enriched_staff = []
         for record in staff_records:
             uid = str(record.get("supabase_user_id") or record.get("id"))
             u = all_users.get(uid)
+            local_u = local_db_users.get(uid) or {}
             
-            # Prefer database stored email and name, fallback to auth profile
-            email = record.get("email") or (u.email if u else f"User {uid[:8]}...")
-            name = record.get("name") or (u.user_metadata.get("name") if u and getattr(u, "user_metadata", None) else "Staff Member")
-            role = record.get("role") or "front_desk"
+            # Prefer database stored email and name, fallback to users table then auth profile
+            email = record.get("email") or local_u.get("email") or (u.email if u else f"User {uid[:8]}...")
+            name = record.get("name") or local_u.get("full_name") or (u.user_metadata.get("name") if u and getattr(u, "user_metadata", None) else "Staff Member")
+            role = record.get("role") or local_u.get("role") or "front_desk"
             is_self = (uid == auth.user_id or (email and email.lower() == auth.email.lower()))
             
             if is_self:
@@ -171,22 +181,30 @@ async def invite_staff(body: InviteStaffRequest, request: Request, auth: Authent
         except Exception as check_err:
             print(f"[staff_router.invite_staff] Check duplicate error: {check_err}")
 
-        # Step 2: Check if user already exists in Supabase auth
+        # Step 2: Check if user already exists in Supabase auth or users table
         existing_user_id = None
         try:
-            users_res = supabase.auth.admin.list_users()
-            for u in users_res:
-                if u.email and u.email.lower() == email:
-                    existing_user_id = str(u.id)
-                    break
+            u_check = supabase_read.table("users").select("id").eq("email", email).execute()
+            if u_check.data:
+                existing_user_id = str(u_check.data[0]["id"])
         except Exception:
             pass
 
+        if not existing_user_id:
+            try:
+                users_res = supabase.auth.admin.list_users()
+                for u in users_res:
+                    if u.email and u.email.lower() == email:
+                        existing_user_id = str(u.id)
+                        break
+            except Exception:
+                pass
+
         # Step 3: Create user in Supabase auth if not exists
-        user_id = existing_user_id
+        user_id = existing_user_id or str(uuid.uuid4())
         temp_password = _generate_compliant_password()
         
-        if not user_id:
+        if not existing_user_id:
             try:
                 new_user = supabase.auth.admin.create_user({
                     "email": email,
@@ -194,12 +212,29 @@ async def invite_staff(body: InviteStaffRequest, request: Request, auth: Authent
                     "email_confirm": True,
                     "user_metadata": {"name": name}
                 })
-                user_id = str(getattr(new_user, "user", new_user).id if hasattr(getattr(new_user, "user", new_user), "id") else getattr(new_user, "id", str(uuid.uuid4())))
+                user_id = str(getattr(new_user, "user", new_user).id if hasattr(getattr(new_user, "user", new_user), "id") else getattr(new_user, "id", user_id))
             except Exception as auth_err:
                 print(f"[staff_router.invite_staff] Auth user creation note: {auth_err}")
-                # Fallback to deterministic/random UUID if demo/mock environment
-                if not user_id:
-                    user_id = str(uuid.uuid4())
+
+        # Step 3.5: Ensure user exists in users table in PostgreSQL
+        from ...core.security import get_password_hash
+        try:
+            supabase.table("users").upsert({
+                "id": user_id,
+                "tenant_id": auth.clinic_id,
+                "email": email,
+                "full_name": name,
+                "role": body.role,
+                "hashed_password": get_password_hash(temp_password),
+                "is_active": True,
+                "is_deleted": False,
+                "mfa_enabled": False,
+                "failed_login_count": 0,
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            }, on_conflict="id").execute()
+        except Exception as u_ins_err:
+            print(f"[staff_router.invite_staff] users table upsert note: {u_ins_err}")
 
         # Step 4: Send invitation email with temporary credentials
         try:
@@ -213,19 +248,23 @@ async def invite_staff(body: InviteStaffRequest, request: Request, auth: Authent
             print(f"[staff_router.invite_staff] Warning: Email send failed: {mail_err}")
 
         # Step 5: Insert into clinic_users table
+        new_row_id = str(uuid.uuid4())
+        now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         inserted_record = {
-            "id": str(uuid.uuid4()),
+            "id": new_row_id,
             "clinic_id": auth.clinic_id,
             "supabase_user_id": user_id,
             "email": email,
             "name": name,
             "role": body.role,
             "is_active": True,
-            "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            "created_at": now_ts,
+            "updated_at": now_ts
         }
 
         try:
             res = supabase.table("clinic_users").insert({
+                "id": new_row_id,
                 "clinic_id": auth.clinic_id,
                 "supabase_user_id": user_id,
                 "email": email,
@@ -234,7 +273,7 @@ async def invite_staff(body: InviteStaffRequest, request: Request, auth: Authent
                 "is_active": True
             }).execute()
             if res.data:
-                inserted_record = res.data[0]
+                inserted_record = res.data[0] if isinstance(res.data, list) else res.data
         except Exception as db_ins_err:
             print(f"[staff_router.invite_staff] DB insert error: {db_ins_err}")
 
@@ -297,25 +336,41 @@ async def update_staff_role(
                 detail=f"Invalid role specified. Must be one of: {', '.join(VALID_ROLES)}."
             )
 
-        if user_id == auth.user_id and body.role != "owner":
+        if (user_id == auth.user_id or user_id == auth.email) and body.role != "owner":
             raise HTTPException(status_code=400, detail="You cannot demote yourself from the Owner role.")
 
+        now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         # Update in database by supabase_user_id or row id
         updated_data = {"role": body.role}
         try:
             res = supabase.table("clinic_users").update({
                 "role": body.role,
-                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                "updated_at": now_ts
             }).eq("clinic_id", auth.clinic_id).eq("supabase_user_id", user_id).execute()
 
             if not res.data:
                 res = supabase.table("clinic_users").update({
                     "role": body.role,
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    "updated_at": now_ts
                 }).eq("clinic_id", auth.clinic_id).eq("id", user_id).execute()
+
+            if not res.data:
+                res = supabase.table("clinic_users").update({
+                    "role": body.role,
+                    "updated_at": now_ts
+                }).eq("clinic_id", auth.clinic_id).eq("email", user_id.lower()).execute()
                 
             if res.data:
-                updated_data = res.data[0]
+                updated_data = res.data[0] if isinstance(res.data, list) else res.data
+                matched_uid = updated_data.get("supabase_user_id") or user_id
+                # Also update users table if present
+                try:
+                    supabase.table("users").update({
+                        "role": body.role,
+                        "updated_at": now_ts
+                    }).eq("id", matched_uid).execute()
+                except Exception as u_err:
+                    print(f"[staff_router.update_staff_role] users update warning: {u_err}")
         except Exception as db_err:
             print(f"[staff_router.update_staff_role] DB update error: {db_err}")
 
@@ -323,6 +378,9 @@ async def update_staff_role(
         local_cache.invalidate(f"user_role_{auth.clinic_id}_{user_id}")
         local_cache.invalidate(f"clinic_id_user_{user_id}")
         local_cache.invalidate(f"user_authenticated_profile_{user_id}")
+        if isinstance(updated_data, dict) and updated_data.get("supabase_user_id"):
+            local_cache.invalidate(f"user_role_{auth.clinic_id}_{updated_data['supabase_user_id']}")
+            local_cache.invalidate(f"user_authenticated_profile_{updated_data['supabase_user_id']}")
 
         # Audit log role update
         await audit_service.log(
@@ -364,7 +422,10 @@ async def remove_staff(
             res = supabase.table("clinic_users").delete().eq("clinic_id", auth.clinic_id).eq("supabase_user_id", user_id).execute()
             if not res.data:
                 # Attempt delete by row id
-                supabase.table("clinic_users").delete().eq("clinic_id", auth.clinic_id).eq("id", user_id).execute()
+                res = supabase.table("clinic_users").delete().eq("clinic_id", auth.clinic_id).eq("id", user_id).execute()
+            if not res.data:
+                # Attempt delete by email
+                res = supabase.table("clinic_users").delete().eq("clinic_id", auth.clinic_id).eq("email", user_id.lower()).execute()
         except Exception as db_err:
             print(f"[staff_router.remove_staff] DB delete error: {db_err}")
 

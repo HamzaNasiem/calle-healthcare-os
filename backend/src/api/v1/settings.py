@@ -53,9 +53,13 @@ async def get_settings(
         provider_list.append({
             "id": p.id,
             "display_name": p.display_name,
+            "title": getattr(p, "title", None),
             "specialty": p.specialty,
+            "npi_number": getattr(p, "npi_number", None),
+            "dea_number": getattr(p, "dea_number", None),
+            "bio": getattr(p, "bio", None),
             "is_accepting_patients": p.is_accepting_patients,
-            "schedule_override": p.schedule_override
+            "schedule_override": getattr(p, "schedule_override", None)
         })
         
     # Safely parse JSON fields
@@ -158,7 +162,11 @@ async def create_provider(
     new_prov = Provider(
         tenant_id=user.tenant_id,
         display_name=req.display_name,
+        title=req.title,
         specialty=req.specialty,
+        npi_number=req.npi_number,
+        dea_number=req.dea_number,
+        bio=req.bio,
         is_accepting_patients=req.is_accepting_patients
     )
     db.add(new_prov)

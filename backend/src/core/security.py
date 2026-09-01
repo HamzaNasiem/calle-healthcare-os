@@ -258,10 +258,14 @@ async def get_current_clinic(user: Any = Depends(get_current_user)) -> str:
             
             local_cache.set(cache_key, clinic_id)
         
-        if not clinic.get("is_active", True):
+        user_email = getattr(user, "email", "") or ""
+        owner_email = clinic.get("owner_email", "") or ""
+        is_owner = bool(owner_email and owner_email.strip().lower() == user_email.strip().lower())
+
+        if not clinic.get("is_active", True) and not is_owner:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Clinic account is inactive"
+                detail="Clinic account is inactive. Please contact the clinic owner."
             )
             
         return clinic_id
@@ -393,13 +397,31 @@ ROLE_PERMISSIONS: Dict[str, List[str]] = {
         "calls:read", "calls:write",
         "settings:read",
     ],
+    "clinician": [
+        "dashboard:read", "dashboard:write",
+        "appointments:read", "appointments:write",
+        "patients:read", "patients:write",
+        "calls:read", "calls:write",
+        "settings:read",
+    ],
     "front_desk": [
         "dashboard:read",
         "appointments:read", "appointments:write", "appointments:delete",
         "patients:read", "patients:write",
         "calls:read", "calls:write",
     ],
+    "staff": [
+        "dashboard:read",
+        "appointments:read", "appointments:write", "appointments:delete",
+        "patients:read", "patients:write",
+        "calls:read", "calls:write",
+    ],
     "read_only": [
+        "dashboard:read",
+        "appointments:read",
+        "patients:read",
+    ],
+    "viewer": [
         "dashboard:read",
         "appointments:read",
         "patients:read",

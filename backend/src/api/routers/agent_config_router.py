@@ -153,7 +153,10 @@ def _format_business_hours(business_hours: Optional[Any]) -> str:
                 else:
                     s = val.get("start", "08:00")
                     e = val.get("end", "17:00")
-                    lines.append(f"{day_cap}: {s} - {e}")
+        if "_lunch_break" in business_hours and isinstance(business_hours["_lunch_break"], dict):
+            lb = business_hours["_lunch_break"]
+            if lb.get("enabled") and lb.get("start") and lb.get("end"):
+                lines.append(f"Daily Lunch Break: {lb['start']} - {lb['end']} (Closed for lunch)")
         if lines:
             return " | ".join(lines)
     return "Monday to Friday: 8:00 AM - 5:00 PM | Saturday: 9:00 AM - 1:00 PM | Sunday: Closed"
@@ -221,6 +224,8 @@ def compile_agent_prompt(
     ai_name: Optional[str] = "Alex",
     speaking_style: Optional[str] = "Warm & Empathetic",
     emergency_protocols: Optional[str] = None,
+    custom_prompt_variables: Optional[Dict[str, str]] = None,
+    fallback_language: Optional[str] = None,
 ) -> str:
     """
     Build the full, HIPAA-compliant system prompt that is pushed to Retell AI and CALL-E voice engine.
@@ -357,6 +362,36 @@ def compile_agent_prompt(
             "vous pouvez lui répondre en anglais, mais privilégiez le français par défaut.\n"
         )
 
+    if fallback_language and str(fallback_language).strip():
+        lang_instruction += f"\nFALLBACK LANGUAGE DIRECTIVE: If caller speaks an alternate language or primary language detection fails, gracefully switch to fallback language '{fallback_language.strip()}'.\n"
+
+    # 11. Configured Services & Appointment Types
+    services_section = ""
+    if services:
+        if isinstance(services, list):
+            s_lines = []
+            for s in services:
+                if isinstance(s, dict):
+                    sn = s.get("name", "Appointment")
+                    sd = s.get("duration_minutes") or s.get("duration") or 30
+                    sf = s.get("fee") if s.get("fee") is not None else s.get("price")
+                    cpt = f" (CPT: {s.get('cpt_code')})" if s.get("cpt_code") else ""
+                    fee_str = f", ${float(sf):g}" if sf is not None and float(sf) > 0 else ""
+                    s_lines.append(f"  • {sn}: {sd} min{fee_str}{cpt}")
+                elif isinstance(s, str) and s.strip():
+                    s_lines.append(f"  • {s.strip()}")
+            if s_lines:
+                services_section = "AVAILABLE APPOINTMENT TYPES & SERVICES:\n" + "\n".join(s_lines) + "\n\n"
+        elif isinstance(services, str) and services.strip():
+            services_section = f"AVAILABLE APPOINTMENT TYPES & SERVICES:\n  {services.strip()}\n\n"
+
+    # 12. Custom Prompt Variables
+    custom_vars_section = ""
+    if custom_prompt_variables and isinstance(custom_prompt_variables, dict):
+        v_lines = [f"  • {k}: {v}" for k, v in custom_prompt_variables.items() if str(v).strip()]
+        if v_lines:
+            custom_vars_section = "\n\nCUSTOM CLINIC PROMPT VARIABLES:\n" + "\n".join(v_lines)
+
     prompt = (
         f"You are {ai_name_str}, a friendly and professional autonomous AI Voice Receptionist for {clinic_name}.\n\n"
         f"CLINIC & DOCTOR INFORMATION:\n"
@@ -364,9 +399,11 @@ def compile_agent_prompt(
         f"  • {doc_info}\n"
         f"  • Operating Hours: {hours_info}\n"
         f"  • Local Timezone: {tz_str}\n\n"
+        f"{services_section}"
         f"{style_instruction}\n\n"
         f"GREETING:\n{greeting}\n\n"
         f"CUSTOM CLINIC INSTRUCTIONS & PERSONA:\n{custom_persona}\n\n"
+        f"{custom_vars_section}\n\n"
         f"{faq_section}\n\n"
         f"{guardrails}\n\n"
         f"{tool_section}\n\n"
@@ -416,7 +453,7 @@ async def _get_clinic_metadata(clinic_id: str, default_name: str) -> dict:
             meta["business_hours"] = c.get("business_hours")
             meta["timezone"] = c.get("timezone") or "America/New_York"
             meta["phone_number"] = c.get("phone_number") or c.get("telnyx_number") or c.get("primary_doctor_phone")
-            meta["services"] = c.get("services")
+            meta["services"] = c.get("appointment_types") or c.get("services")
     except Exception:
         pass
     return meta

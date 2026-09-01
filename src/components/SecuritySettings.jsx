@@ -156,6 +156,17 @@ const SecuritySettings = () => {
   const [ipError, setIpError] = useState(null);
   const [addingIp, setAddingIp] = useState(false);
 
+  // Password Change States
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(null);
+
   // Sessions States
   const [sessions, setSessions] = useState([]);
 
@@ -188,6 +199,10 @@ const SecuritySettings = () => {
 
       if (settingsRes?.data?.data) {
         setSecSettings(settingsRes.data.data);
+        if (settingsRes.data.data.idle_session_timeout_minutes) {
+          localStorage.setItem("bytelytic_idle_timeout_mins", String(settingsRes.data.data.idle_session_timeout_minutes));
+          window.dispatchEvent(new Event("bytelytic_idle_timeout_changed"));
+        }
       }
 
       setSessions(sessionsRes?.data?.data || []);
@@ -453,6 +468,78 @@ const SecuritySettings = () => {
       setErr(error.response?.data?.detail || "Failed to disable MFA.");
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleToggleMfaEnforcement = async () => {
+    const nextState = !secSettings.mfa_enforced;
+    setActionLoading("mfa-enforce");
+    setMessage(null);
+    setErr(null);
+    try {
+      await api.patch("/security/settings", { mfa_enforced: nextState });
+      setSecSettings(prev => ({ ...prev, mfa_enforced: nextState }));
+      setMessage(nextState
+        ? "Mandatory 2FA Policy is now ACTIVE. All clinic users must verify 2FA upon sign-in."
+        : "Mandatory 2FA Policy has been set to optional.");
+      fetchAuditLogs();
+    } catch (error) {
+      setErr(error.response?.data?.detail || "Failed to toggle MFA enforcement policy.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Password Change Handler & Validation
+  // ─────────────────────────────────────────────────────────────────────────
+  const passChecks = {
+    length: newPassword.length >= 8,
+    uppercase: /[A-Z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword),
+    special: /[!@#$%^&*(),.?":{}|<>]/.test(newPassword),
+    match: Boolean(newPassword && confirmPassword && newPassword === confirmPassword),
+  };
+  const isNewPasswordValid = passChecks.length && passChecks.uppercase && passChecks.number && passChecks.special;
+
+  const handleChangePassword = async (e) => {
+    if (e) e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (!currentPassword) {
+      setPasswordError("Please enter your current password.");
+      return;
+    }
+    if (!isNewPasswordValid) {
+      setPasswordError("New password must meet all complexity requirements (8+ characters, uppercase letter, number, special character).");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New password and confirmation password do not match.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError("New password cannot be the same as your current password.");
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const res = await api.post("/security/change-password", {
+        old_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      });
+      setPasswordSuccess(res.data?.message || "Password updated successfully. Other device sessions have been safely logged out.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      fetchAuditLogs();
+    } catch (error) {
+      setPasswordError(error.response?.data?.detail || "Failed to update password. Please verify your current password.");
+    } finally {
+      setPasswordLoading(false);
     }
   };
 

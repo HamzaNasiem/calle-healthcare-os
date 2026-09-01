@@ -139,3 +139,78 @@ def test_sessions_endpoints(client, auth_headers):
     res = client.get("/api/v1/security/sessions", headers=auth_headers)
     assert res.status_code == 200
     assert "data" in res.json()
+
+
+def test_change_password_validation_and_flow(client, auth_headers):
+    # 1. Incorrect old password
+    bad_old = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "WrongPassword123!",
+            "new_password": "NewValidPass#2026!"
+        },
+        headers=auth_headers
+    )
+    assert bad_old.status_code == 400
+    assert "Current password is incorrect" in bad_old.json()["detail"]
+
+    # 2. Too short password (< 8 chars)
+    short_pw = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "Password123!",
+            "new_password": "short"
+        },
+        headers=auth_headers
+    )
+    assert short_pw.status_code in [400, 422]
+
+    # 3. Password lacking complexity (no uppercase, no symbols)
+    weak_pw = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "Password123!",
+            "new_password": "alllowercaseandnumbers1234"
+        },
+        headers=auth_headers
+    )
+    assert weak_pw.status_code == 400
+    assert "uppercase" in weak_pw.json()["detail"].lower()
+
+    # 4. Same as old password
+    same_pw = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "Password123!",
+            "new_password": "Password123!"
+        },
+        headers=auth_headers
+    )
+    assert same_pw.status_code == 400
+    assert "cannot be the same" in same_pw.json()["detail"].lower()
+
+    # 5. Mismatched confirmation password
+    mismatch_pw = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "Password123!",
+            "new_password": "ValidStrongPass#2026!",
+            "confirm_password": "DifferentPass#2026!"
+        },
+        headers=auth_headers
+    )
+    assert mismatch_pw.status_code == 400
+    assert "do not match" in mismatch_pw.json()["detail"].lower()
+
+    # 6. Valid password change
+    valid_res = client.post(
+        "/api/v1/security/change-password",
+        json={
+            "old_password": "Password123!",
+            "new_password": "ValidStrongPass#2026!",
+            "confirm_password": "ValidStrongPass#2026!"
+        },
+        headers=auth_headers
+    )
+    assert valid_res.status_code == 200
+    assert valid_res.json()["success"] is True

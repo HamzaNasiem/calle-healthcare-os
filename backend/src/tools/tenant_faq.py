@@ -32,10 +32,10 @@ class CheckServicePricingTool(BaseTool):
         cache_key = f"t:{tenant_id}:settings"
         settings_data = local_cache.get(cache_key)
         
-        if not settings_data:
+        if not settings_data or not settings_data.get("services"):
             stmt = select(TenantSettings).where(TenantSettings.tenant_id == tenant_id)
             settings_obj = (await db.execute(stmt)).scalars().first()
-            if settings_obj:
+            if settings_obj and settings_obj.services:
                 settings_data = {
                     "services": settings_obj.services or [],
                     "faq_entries": settings_obj.faq_entries or [],
@@ -43,18 +43,48 @@ class CheckServicePricingTool(BaseTool):
                 }
                 local_cache.set(cache_key, settings_data, ttl=3600)
             else:
-                return {"found": False, "message": "I don't have pricing available right now."}
-                
+                from src.core.database import supabase_read
+                try:
+                    c_res = supabase_read.table("clinics").select("appointment_types, services").eq("id", tenant_id).single().execute()
+                    if c_res.data:
+                        appts = c_res.data.get("appointment_types") or []
+                        srv_list = []
+                        for a in appts:
+                            if isinstance(a, dict):
+                                fee = a.get("fee") if a.get("fee") is not None else a.get("price")
+                                fee_str = f"${float(fee):g}" if fee is not None and float(fee) > 0 else "Free"
+                                srv_list.append({
+                                    "name": a.get("name"),
+                                    "price_display": fee_str,
+                                    "price": fee,
+                                    "duration_minutes": a.get("duration_minutes") or a.get("duration") or 30,
+                                    "cpt_code": a.get("cpt_code")
+                                })
+                        for s in (c_res.data.get("services") or []):
+                            if isinstance(s, dict):
+                                srv_list.append(s)
+                        settings_data = {
+                            "services": srv_list,
+                            "faq_entries": [],
+                            "transfer_number": None
+                        }
+                        local_cache.set(cache_key, settings_data, ttl=3600)
+                except Exception:
+                    pass
+
         services = settings_data.get("services", []) if isinstance(settings_data, dict) else []
         for s in services:
             svc_n = str(s.get("name", "")).lower()
             if service_name in svc_n or svc_n in service_name:
-                return {
+                res_payload = {
                     "found": True,
                     "service": s.get("name"),
                     "price": s.get("price_display"),
                     "duration_minutes": s.get("duration_minutes")
                 }
+                if s.get("cpt_code"):
+                    res_payload["cpt_code"] = s.get("cpt_code")
+                return res_payload
                 
         return {"found": False, "message": "I don't have pricing for that specific service. Let me transfer you to our billing team."}
 

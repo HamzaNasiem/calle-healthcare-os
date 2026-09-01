@@ -192,6 +192,69 @@ class DrChronoConnector(EMRIntegrationBase):
             log.error(f"[drchrono] get_patient error ehr_id={ehr_patient_id}: {e}")
             return None
 
+    async def create_clinical_note(self, clinic_id: str, note_data: dict) -> Optional[str]:
+        """Push CALL-E encounter note to DrChrono clinical notes."""
+        ehr_patient_id = note_data.get("ehr_patient_id")
+        if not ehr_patient_id and note_data.get("local_patient_id"):
+            ehr_patient_id = self._get_existing_mapping(clinic_id, "patient", note_data["local_patient_id"])
+
+        if not ehr_patient_id:
+            log.warning(f"[drchrono] cannot create note: patient not mapped to DrChrono")
+            return None
+
+        payload = {
+            "patient": int(ehr_patient_id) if str(ehr_patient_id).isdigit() else ehr_patient_id,
+            "appointment": note_data.get("ehr_appointment_id"),
+            "clinical_note_sections": [
+                {
+                    "title": note_data.get("title", "CALL-E Voice AI Call Summary"),
+                    "value": note_data.get("content") or note_data.get("summary") or note_data.get("transcript", "")
+                }
+            ]
+        }
+        if self._doctor_id:
+            try:
+                payload["doctor"] = int(self._doctor_id)
+            except ValueError:
+                payload["doctor"] = self._doctor_id
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{self._base_url}/clinical_notes",
+                    headers=self._headers(),
+                    json=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                note_id = str(data.get("id", ""))
+                log.info(f"[drchrono] clinical note created: id={note_id}")
+                return note_id or None
+        except Exception as e:
+            log.error(f"[drchrono] create_clinical_note error: {e}")
+            return None
+
+    async def fetch_appointments(self, clinic_id: str, start_date: Optional[str] = None) -> list:
+        """Fetch appointments from DrChrono for inbound sync."""
+        try:
+            params = {}
+            if start_date:
+                params["date"] = start_date
+            if self._doctor_id:
+                params["doctor"] = self._doctor_id
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"{self._base_url}/appointments",
+                    headers=self._headers(),
+                    params=params,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("results", []) if isinstance(data, dict) else (data or [])
+        except Exception as e:
+            log.error(f"[drchrono] fetch_appointments error: {e}")
+            return []
+
     async def verify_connection(self, clinic_id: str) -> bool:
         """Verify DrChrono connection via users/current or doctors endpoint."""
         try:

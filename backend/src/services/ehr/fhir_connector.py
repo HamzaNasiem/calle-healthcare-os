@@ -246,6 +246,87 @@ class FHIRConnector(EMRIntegrationBase):
             log.error(f"[{self._provider_name}] get_patient error ehr_id={ehr_patient_id}: {e}")
             return None
 
+    async def create_clinical_note(self, clinic_id: str, note_data: dict) -> Optional[str]:
+        """Create a FHIR R4 DocumentReference / Communication note resource."""
+        ehr_patient_id = note_data.get("ehr_patient_id")
+        if not ehr_patient_id and note_data.get("local_patient_id"):
+            ehr_patient_id = self._get_existing_mapping(clinic_id, "patient", note_data["local_patient_id"])
+
+        if not ehr_patient_id:
+            log.warning(f"[{self._provider_name}] cannot create note: patient not mapped to FHIR")
+            return None
+
+        note_text = note_data.get("content") or note_data.get("summary") or note_data.get("transcript", "")
+        import base64
+        encoded_note = base64.b64encode(note_text.encode("utf-8")).decode("utf-8")
+
+        fhir_doc = {
+            "resourceType": "DocumentReference",
+            "status": "current",
+            "docStatus": "final",
+            "type": {
+                "coding": [
+                    {
+                        "system": "http://loinc.org",
+                        "code": "11506-3",
+                        "display": "Progress note / CALL-E Encounter"
+                    }
+                ],
+                "text": note_data.get("title", "CALL-E Voice AI Clinical Encounter Note")
+            },
+            "subject": {"reference": f"Patient/{ehr_patient_id}"},
+            "date": note_data.get("date", datetime.utcnow().isoformat() + "Z"),
+            "content": [
+                {
+                    "attachment": {
+                        "contentType": "text/plain",
+                        "data": encoded_note,
+                        "title": note_data.get("title", "CALL-E Note")
+                    }
+                }
+            ]
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{self._fhir_endpoint}/DocumentReference",
+                    headers=self._headers(),
+                    json=fhir_doc,
+                )
+                resp.raise_for_status()
+                ehr_id = ""
+                if resp.status_code in (200, 201):
+                    try:
+                        body = resp.json()
+                        ehr_id = str(body.get("id", ""))
+                    except Exception:
+                        pass
+                    if not ehr_id and "location" in resp.headers:
+                        loc = resp.headers["location"]
+                        ehr_id = loc.split("/")[-1].split("?")[0]
+                log.info(f"[{self._provider_name}] clinical note created: doc_id={ehr_id}")
+                return ehr_id or None
+        except Exception as e:
+            log.error(f"[{self._provider_name}] create_clinical_note error: {e}")
+            return None
+
+    async def fetch_appointments(self, clinic_id: str, start_date: Optional[str] = None) -> list:
+        """Query FHIR R4 /Appointment resources for inbound sync."""
+        try:
+            url = f"{self._fhir_endpoint}/Appointment?_count=25"
+            if start_date:
+                url += f"&date=ge{start_date}"
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(url, headers=self._headers())
+                resp.raise_for_status()
+                bundle = resp.json()
+                entries = bundle.get("entry", [])
+                return [e.get("resource", {}) for e in entries if e.get("resource")]
+        except Exception as e:
+            log.error(f"[{self._provider_name}] fetch_appointments error: {e}")
+            return []
+
     async def verify_connection(self, clinic_id: str) -> bool:
         """
         Verify FHIR endpoint connection via /metadata CapabilityStatement

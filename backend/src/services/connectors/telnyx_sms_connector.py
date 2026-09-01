@@ -1,4 +1,3 @@
-import telnyx
 from typing import Optional, Any
 import anyio
 from .base_connector import BaseSmsConnector
@@ -20,10 +19,17 @@ class TelnyxSmsConnector(BaseSmsConnector):
             getattr(settings, "telnyx_api_key", "") or 
             ""
         )
-        if self.api_key:
-            self.client = telnyx.Telnyx(api_key=self.api_key)
-        else:
-            self.client = None
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None and self.api_key:
+            try:
+                import telnyx
+                self._client = telnyx.Telnyx(api_key=self.api_key)
+            except Exception as e:
+                self._client = None
+        return self._client
 
     async def send_sms(self, from_number: str, to_number: str, body: str) -> str:
         """

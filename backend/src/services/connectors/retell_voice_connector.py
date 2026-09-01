@@ -1,4 +1,3 @@
-from retell import Retell
 import anyio
 from typing import Dict, Any
 from .base_connector import BaseVoiceConnector
@@ -11,7 +10,17 @@ retell_breaker = CircuitBreaker("RetellVoice", failure_threshold=5, recovery_tim
 class RetellVoiceConnector(BaseVoiceConnector):
     def __init__(self):
         # Initialize Retell SDK client dynamically
-        self.retell = Retell(api_key=settings.RETELL_API_KEY)
+        self._retell = None
+
+    @property
+    def retell(self):
+        if self._retell is None:
+            try:
+                from retell import Retell
+                self._retell = Retell(api_key=settings.RETELL_API_KEY)
+            except Exception as e:
+                self._retell = None
+        return self._retell
 
     def _create_llm(self, **kwargs) -> Any:
         return self.retell.llm.create(**kwargs)

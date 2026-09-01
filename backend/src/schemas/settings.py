@@ -17,10 +17,14 @@ class BusinessDay(BaseModel):
             self.enabled = self.open
 
 class Provider(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True)
+    model_config = ConfigDict(extra='ignore')
     id: uuid.UUID
     display_name: str
+    title: str | None = None
     specialty: str | None = None
+    npi_number: str | None = None
+    dea_number: str | None = None
+    bio: str | None = None
     is_accepting_patients: bool
     schedule_override: dict | None = None
 
@@ -81,10 +85,14 @@ class SettingsUpdateResponse(BaseModel):
     data: SettingsUpdateResponseData
 
 class CreateProviderRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True)
+    model_config = ConfigDict(extra='ignore')
     display_name: str
+    title: str | None = None
     specialty: str | None = None
-    is_accepting_patients: bool
+    npi_number: str | None = None
+    dea_number: str | None = None
+    bio: str | None = None
+    is_accepting_patients: bool = True
 
 class CreateProviderResponseData(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)

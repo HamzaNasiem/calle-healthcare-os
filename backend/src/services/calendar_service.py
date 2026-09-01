@@ -149,6 +149,17 @@ class CalendarService:
             calendar_id = clinic.get("google_calendar_id") or "primary"
             busy = await self.connector.get_busy_windows(creds, calendar_id, day_start, day_end)
                 
+            # Exclude lunch break windows if configured
+            lunch_start_dt = None
+            lunch_end_dt = None
+            lb_conf = biz_hours.get("_lunch_break") if isinstance(biz_hours, dict) else None
+            if isinstance(lb_conf, dict) and lb_conf.get("enabled") and lb_conf.get("start") and lb_conf.get("end"):
+                ls_parts = _parse_time_parts(lb_conf["start"])
+                le_parts = _parse_time_parts(lb_conf["end"])
+                if ls_parts and le_parts:
+                    lunch_start_dt = tz.localize(datetime.datetime.strptime(f"{date_str[:10]}T{ls_parts[0]:02d}:{ls_parts[1]:02d}:00", "%Y-%m-%dT%H:%M:%S"))
+                    lunch_end_dt = tz.localize(datetime.datetime.strptime(f"{date_str[:10]}T{le_parts[0]:02d}:{le_parts[1]:02d}:00", "%Y-%m-%dT%H:%M:%S"))
+
             slots = []
             slot_delta = datetime.timedelta(minutes=duration_minutes)
             cursor = day_start
@@ -156,6 +167,8 @@ class CalendarService:
             while cursor + slot_delta <= day_end:
                 slot_end = cursor + slot_delta
                 overlaps = any((cursor < b["end"] and slot_end > b["start"]) for b in busy)
+                if lunch_start_dt and lunch_end_dt and (cursor < lunch_end_dt and slot_end > lunch_start_dt):
+                    overlaps = True
                 if not overlaps:
                     slots.append(cursor.isoformat())
                 cursor += slot_delta

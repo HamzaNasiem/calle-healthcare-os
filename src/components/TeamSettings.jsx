@@ -28,28 +28,59 @@ const ROLE_CONFIGS = {
     badgeBg: "bg-[#edf7e0] text-[#396a00] border-[#d2ebbc]",
     description: "Full access to dashboard, patient charts, staff management & billing."
   },
-  doctor: {
-    label: "Doctor",
-    shortLabel: "Doctor",
+  clinician: {
+    label: "Clinician / Doctor",
+    shortLabel: "Clinician",
     icon: Stethoscope,
     badgeBg: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
     description: "Clinical access to appointments, patient records, and medical notes."
   },
-  front_desk: {
-    label: "Front Desk",
-    shortLabel: "Front Desk",
+  doctor: {
+    label: "Clinician / Doctor",
+    shortLabel: "Clinician",
+    icon: Stethoscope,
+    badgeBg: "bg-[#e0f2fe] text-[#0369a1] border-[#bae6fd]",
+    description: "Clinical access to appointments, patient records, and medical notes."
+  },
+  staff: {
+    label: "Staff / Front Desk",
+    shortLabel: "Staff",
     icon: Headphones,
     badgeBg: "bg-[#fef3c7] text-[#b45309] border-[#fde68a]",
     description: "Manage appointment bookings, patient schedules, and live call logs."
   },
+  front_desk: {
+    label: "Staff / Front Desk",
+    shortLabel: "Staff",
+    icon: Headphones,
+    badgeBg: "bg-[#fef3c7] text-[#b45309] border-[#fde68a]",
+    description: "Manage appointment bookings, patient schedules, and live call logs."
+  },
+  viewer: {
+    label: "Viewer / Read Only",
+    shortLabel: "Viewer",
+    icon: Eye,
+    badgeBg: "bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]",
+    description: "View-only access to calendar, patient list, and analytics reports."
+  },
   read_only: {
-    label: "Read Only",
-    shortLabel: "Read Only",
+    label: "Viewer / Read Only",
+    shortLabel: "Viewer",
     icon: Eye,
     badgeBg: "bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]",
     description: "View-only access to calendar, patient list, and analytics reports."
   }
 };
+
+const PRIMARY_ROLES = ["owner", "clinician", "staff", "viewer"];
+
+const FILTER_OPTIONS = [
+  { id: "all", label: "All Roles", roles: [] },
+  { id: "owner", label: "Owners", roles: ["owner"] },
+  { id: "clinician", label: "Clinicians", roles: ["clinician", "doctor"] },
+  { id: "staff", label: "Staff", roles: ["staff", "front_desk"] },
+  { id: "viewer", label: "Viewers", roles: ["viewer", "read_only"] }
+];
 
 const TeamSettings = () => {
   const { user: currentUser } = useAuth();
@@ -65,7 +96,7 @@ const TeamSettings = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
-  const [inviteRole, setInviteRole] = useState("front_desk");
+  const [inviteRole, setInviteRole] = useState("staff");
   const [inviting, setInviting] = useState(false);
 
   // Action states

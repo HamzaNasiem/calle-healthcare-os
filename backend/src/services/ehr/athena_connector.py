@@ -192,6 +192,61 @@ class AthenaHealthConnector(EMRIntegrationBase):
             log.error(f"[athenahealth] get_patient error ehr_id={ehr_patient_id}: {e}")
             return None
 
+    async def create_clinical_note(self, clinic_id: str, note_data: dict) -> Optional[str]:
+        """Push CALL-E telephone encounter or clinical note to AthenaHealth."""
+        ehr_patient_id = note_data.get("ehr_patient_id")
+        if not ehr_patient_id and note_data.get("local_patient_id"):
+            ehr_patient_id = self._get_existing_mapping(clinic_id, "patient", note_data["local_patient_id"])
+
+        if not ehr_patient_id:
+            log.warning(f"[athenahealth] cannot create note: patient not mapped to Athena")
+            return None
+
+        payload = {
+            "departmentid": "1",
+            "documenttypeid": "1",
+            "documentsubclass": "CLINICALDOCUMENT",
+            "internalnote": note_data.get("content") or note_data.get("summary") or note_data.get("transcript", ""),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{self._base_url}/{self._practice_id}/patients/{ehr_patient_id}/documents",
+                    headers=self._headers(),
+                    data=payload,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                doc_id = ""
+                if isinstance(data, list) and len(data) > 0:
+                    doc_id = str(data[0].get("documentid", ""))
+                elif isinstance(data, dict):
+                    doc_id = str(data.get("documentid") or data.get("id", ""))
+                log.info(f"[athenahealth] clinical note created for patient {ehr_patient_id}: doc_id={doc_id}")
+                return doc_id or None
+        except Exception as e:
+            log.error(f"[athenahealth] create_clinical_note error: {e}")
+            return None
+
+    async def fetch_appointments(self, clinic_id: str, start_date: Optional[str] = None) -> list:
+        """Fetch booked appointments from AthenaHealth for inbound sync."""
+        try:
+            params = {"departmentid": "1"}
+            if start_date:
+                params["startdate"] = start_date
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"{self._base_url}/{self._practice_id}/appointments/booked",
+                    headers={"Authorization": f"Bearer {self._access_token}", "Accept": "application/json"},
+                    params=params,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data.get("appointments", []) if isinstance(data, dict) else (data or [])
+        except Exception as e:
+            log.error(f"[athenahealth] fetch_appointments error: {e}")
+            return []
+
     async def verify_connection(self, clinic_id: str) -> bool:
         """Verify connection to AthenaHealth via departments or ping endpoint."""
         try:

@@ -1,4 +1,5 @@
 import re
+import base64
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -8,8 +9,10 @@ from ...core.security import require_permission, AuthenticatedUser
 from ...core.config import settings
 from ...core.logger import log
 from ...core.cache import local_cache
+from ...core.encryption import phi_crypto
 from ...services.audit_service import audit_service
 from ...services.voice_service import voice_service
+from ...services.calle_service import calle_service
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
 
@@ -21,6 +24,8 @@ class IntegrationsSettingsUpdate(BaseModel):
     google_calendar_id: Optional[str] = None
     twilio_account_sid: Optional[str] = None
     twilio_auth_token: Optional[str] = None
+    calle_api_key: Optional[str] = None
+    calle_enabled: Optional[bool] = None
 
 
 def _mask_secret(val: Optional[str], visible_start: int = 4, visible_end: int = 4) -> Optional[str]:
@@ -29,7 +34,17 @@ def _mask_secret(val: Optional[str], visible_start: int = 4, visible_end: int = 
     val_str = str(val).strip()
     if len(val_str) <= (visible_start + visible_end):
         return "•" * len(val_str)
-    return val_str[:visible_start] + "•" * (len(val_str) - (visible_start + visible_end)) + val_str[-visible_end:]
+    return val_str[:visible_start] + "••••••" + val_str[-visible_end:]
+
+
+def _decrypt_calle_key(enc_val: Optional[str]) -> Optional[str]:
+    if not enc_val:
+        return None
+    try:
+        raw_bytes = base64.b64decode(str(enc_val).strip())
+        return phi_crypto.decrypt(raw_bytes)
+    except Exception:
+        return None
 
 
 def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,7 +87,25 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "status_label": "Active" if twilio_connected else "Not Configured",
     }
 
-    # 4. Retell AI
+    # 4. CALL-E AI Voice Engine
+    raw_calle_key = _decrypt_calle_key(clinic.get("calle_api_key_enc"))
+    if not raw_calle_key:
+        raw_calle_key = getattr(settings, "CALLE_API_KEY", None) or getattr(settings, "calle_api_key", None) or ""
+
+    has_calle = bool(raw_calle_key and len(str(raw_calle_key).strip()) > 0)
+    calle_enabled = clinic.get("calle_enabled", True) if has_calle else False
+    calle_masked = _mask_secret(raw_calle_key, 10, 4) if has_calle else None
+    calle_status = {
+        "connected": bool(has_calle and calle_enabled),
+        "is_configured": has_calle,
+        "enabled": calle_enabled,
+        "api_key_masked": calle_masked,
+        "mode": "live" if (has_calle and not getattr(settings, "CALLE_DRY_RUN", False)) else "dry_run",
+        "webhook_url": f"{webhook_base}/calle/webhook",
+        "status_label": f"Active ({calle_masked})" if (has_calle and calle_masked) else ("Live Active" if has_calle else "Unconfigured"),
+    }
+
+    # 5. Retell AI
     agent_id = clinic.get("retell_agent_id") or ""
     retell_connected = bool(agent_id and len(agent_id.strip()) > 0)
     retell_status = {
@@ -83,7 +116,7 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "status_label": "Live Active" if retell_connected else "Not Built",
     }
 
-    # 5. Stripe Billing
+    # 6. Stripe Billing
     customer_id = clinic.get("stripe_customer_id") or ""
     sub_status = clinic.get("subscription_status") or clinic.get("stripe_subscription_status") or ("active" if customer_id else "trial")
     sub_plan = clinic.get("subscription_plan") or clinic.get("plan") or "trial"
@@ -103,6 +136,7 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "google_calendar": google_status,
         "telnyx": telnyx_status,
         "twilio": twilio_status,
+        "calle": calle_status,
         "retell": retell_status,
         "stripe": stripe_status,
     }
@@ -160,7 +194,7 @@ async def update_integrations_settings(
         check_res = supabase_read.table("clinics").select("*").eq("id", clinic_id).single().execute()
         existing_clinic = check_res.data or {}
 
-        # If telnyx_number updated, clean cache
+        # If telnyx_number updated, clean cache and sync phone_number if needed
         if "telnyx_number" in update_dict:
             old_num = existing_clinic.get("telnyx_number")
             if old_num:
@@ -168,11 +202,43 @@ async def update_integrations_settings(
             new_num = update_dict.get("telnyx_number")
             if new_num:
                 local_cache.delete(f"telnyx_clinic_info_{new_num}")
+                if "phone_number" not in update_dict and not existing_clinic.get("phone_number"):
+                    update_dict["phone_number"] = new_num
+
+        # Handle CALL-E API key encryption
+        if "calle_api_key" in update_dict:
+            raw_key = update_dict.pop("calle_api_key")
+            if raw_key and str(raw_key).strip():
+                cleaned_key = str(raw_key).strip()
+                # Ignore masked values submitted by UI
+                if "•" not in cleaned_key:
+                    enc_bytes = phi_crypto.encrypt(cleaned_key)
+                    if enc_bytes:
+                        update_dict["calle_api_key_enc"] = base64.b64encode(enc_bytes).decode("utf-8")
+                        update_dict["calle_enabled"] = True
+                        try:
+                            settings.CALLE_API_KEY = cleaned_key
+                            settings.calle_api_key = cleaned_key
+                        except Exception:
+                            pass
+            elif raw_key == "":
+                update_dict["calle_api_key_enc"] = None
+                update_dict["calle_enabled"] = False
+                try:
+                    settings.CALLE_API_KEY = None
+                    settings.calle_api_key = None
+                except Exception:
+                    pass
 
         # Update in database
         updated_clinic = db_update_clinic(clinic_id, update_dict)
 
-        # Audit log
+        # Audit log - mask secret fields for HIPAA compliance
+        def _sanitize_field(k: str, v: Any) -> Any:
+            if any(s in k.lower() for s in ["key", "token", "secret", "sid", "auth"]):
+                return _mask_secret(str(v)) if v else None
+            return v
+
         await audit_service.log(
             clinic_id=clinic_id,
             user_id=auth.user_id,
@@ -181,8 +247,8 @@ async def update_integrations_settings(
             resource_type="clinics",
             resource_id=clinic_id,
             details={
-                "before": {k: existing_clinic.get(k) for k in update_dict.keys() if k in existing_clinic},
-                "after": update_dict,
+                "before": {k: _sanitize_field(k, existing_clinic.get(k)) for k in update_dict.keys() if k in existing_clinic},
+                "after": {k: _sanitize_field(k, v) for k, v in update_dict.items()},
             },
             request=request
         )
@@ -379,6 +445,37 @@ async def test_integration_connection(
                 "details": {
                     "phone_number": twilio_num or "System Default",
                     "system_configured": has_creds
+                }
+            }
+
+        elif service_clean in ["calle", "calle_ai", "calle_voice", "calle_engine"]:
+            raw_calle_key = _decrypt_calle_key(clinic.get("calle_api_key_enc"))
+            if not raw_calle_key:
+                raw_calle_key = getattr(settings, "CALLE_API_KEY", None) or getattr(settings, "calle_api_key", None) or ""
+
+            if not raw_calle_key:
+                return {
+                    "success": False,
+                    "service": "calle",
+                    "message": "CALL-E API key is not configured. Please enter your CALL-E API key and save.",
+                }
+
+            calle_masked = _mask_secret(raw_calle_key, 10, 4)
+            is_live = False
+            try:
+                is_live = calle_service.is_live()
+            except Exception:
+                is_live = bool(raw_calle_key and not getattr(settings, "CALLE_DRY_RUN", False))
+
+            return {
+                "success": True,
+                "service": "calle",
+                "message": f"CALL-E AI Voice Engine is active and operational ({'live mode' if is_live else 'dry-run mode'}). Authenticated key: {calle_masked}",
+                "details": {
+                    "api_key_masked": calle_masked,
+                    "live_mode": is_live,
+                    "configured": True,
+                    "engine_version": "0.6.0"
                 }
             }
 

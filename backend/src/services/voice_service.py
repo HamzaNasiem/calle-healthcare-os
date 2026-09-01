@@ -146,6 +146,11 @@ class VoiceService:
                 else:
                     hours_lines.append(f"  {day_name}: {v_str}")
 
+        if "_lunch_break" in hours_raw and isinstance(hours_raw["_lunch_break"], dict):
+            lb = hours_raw["_lunch_break"]
+            if lb.get("enabled") and lb.get("start") and lb.get("end"):
+                hours_lines.append(f"  Daily Lunch Break: {lb['start']} – {lb['end']} (Closed for Lunch)")
+
         hours_text = "\n".join(hours_lines) if hours_lines else "  Monday–Friday: 08:00 – 18:00\n  Saturday–Sunday: Closed"
         
         # Format appointment types
@@ -464,15 +469,17 @@ Extract intent. Return ONLY JSON format:
                     print(f"[voice.handle_call_event] Timezone error on booking: {str(tz_err)}, falling back to naive UTC")
                     appt_dt = datetime.datetime.strptime(f"{intent_data['date']}T{intent_data['time']}:00", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
                 
-                # Resolve appointment type, duration, and fee dynamically from clinic settings
-                requested_type = str(intent_data.get("appointment_type") or "Initial Evaluation").strip()
+                # Resolve appointment type, duration, fee, and CPT dynamically from clinic settings
+                requested_type = str(intent_data.get("appointment_type") or "General Consultation").strip()
                 types_list = clinic_data.get("appointment_types") if isinstance(clinic_data, dict) else []
                 
                 matched_type_name = requested_type
                 matched_duration = 30
                 matched_fee = None
+                matched_cpt = None
 
                 if types_list and isinstance(types_list, list):
+                    # 1. Direct name match
                     for t in types_list:
                         if isinstance(t, dict):
                             t_name = str(t.get("name", "")).strip()
@@ -485,19 +492,53 @@ Extract intent. Return ONLY JSON format:
                                         matched_fee = float(fee_raw)
                                     except (ValueError, TypeError):
                                         pass
+                                matched_cpt = t.get("cpt_code")
                                 break
-                    if matched_duration == 30 and any(k in requested_type.lower() for k in ["initial", "eval", "first", "new"]):
-                        for t in types_list:
-                            if isinstance(t, dict) and "initial" in str(t.get("name", "")).lower():
-                                matched_type_name = t.get("name", "Initial Evaluation")
-                                matched_duration = int(t.get("duration_minutes") or t.get("duration") or 60)
-                                fee_raw = t.get("fee") if t.get("fee") is not None else t.get("price")
-                                if fee_raw is not None:
-                                    try:
-                                        matched_fee = float(fee_raw)
-                                    except (ValueError, TypeError):
-                                        pass
-                                break
+
+                    # 2. Semantic keyword matching if not matched directly
+                    if matched_fee is None and requested_type:
+                        req_lower = requested_type.lower()
+                        keyword_categories = [
+                            (["eval", "initial", "assessment", "pt", "physical"], ["eval", "physical"]),
+                            (["sport", "rehab", "athletic", "injury", "training"], ["sport", "rehab"]),
+                            (["follow", "routine", "return", "checkup"], ["follow"]),
+                            (["consult", "general", "doctor", "check"], ["consult", "general"])
+                        ]
+                        for keywords, target_patterns in keyword_categories:
+                            if any(k in req_lower for k in keywords):
+                                for t in types_list:
+                                    if isinstance(t, dict):
+                                        t_low = str(t.get("name", "")).lower()
+                                        if any(tp in t_low for tp in target_patterns):
+                                            matched_type_name = t.get("name", matched_type_name)
+                                            matched_duration = int(t.get("duration_minutes") or t.get("duration") or 30)
+                                            fee_raw = t.get("fee") if t.get("fee") is not None else t.get("price")
+                                            if fee_raw is not None:
+                                                try:
+                                                    matched_fee = float(fee_raw)
+                                                except (ValueError, TypeError):
+                                                    pass
+                                            matched_cpt = t.get("cpt_code")
+                                            break
+                                if matched_fee is not None:
+                                    break
+
+                    # 3. Fallback to first configured appointment type if still unassigned
+                    if matched_fee is None and types_list and isinstance(types_list[0], dict):
+                        first_t = types_list[0]
+                        matched_type_name = first_t.get("name", "General Consultation")
+                        matched_duration = int(first_t.get("duration_minutes") or first_t.get("duration") or 30)
+                        fee_raw = first_t.get("fee") if first_t.get("fee") is not None else first_t.get("price")
+                        if fee_raw is not None:
+                            try:
+                                matched_fee = float(fee_raw)
+                            except (ValueError, TypeError):
+                                pass
+                        matched_cpt = first_t.get("cpt_code")
+
+                fee_to_record = matched_fee if (matched_fee is not None and matched_fee > 0) else (clinic_data.get("monthly_revenue_per_visit") or 150 if isinstance(clinic_data, dict) else 150)
+                amount = int(fee_to_record * 100)
+                appt_notes = f"Booked by Bytelytic AI Receptionist (CPT: {matched_cpt})" if matched_cpt else "Booked by Bytelytic AI Receptionist"
 
                 # Book in Google Calendar
                 appt_dict = {
@@ -505,7 +546,7 @@ Extract intent. Return ONLY JSON format:
                     "appointment_type": matched_type_name,
                     "datetime": appt_dt.isoformat(),
                     "duration_minutes": matched_duration,
-                    "notes": "Booked by Bytelytic AI Receptionist"
+                    "notes": appt_notes
                 }
                 
                 cal_res = await calendar_service.create_event(clinic_id, appt_dict)
@@ -520,6 +561,8 @@ Extract intent. Return ONLY JSON format:
                     "appointment_type": appt_dict["appointment_type"],
                     "datetime": appt_dt.isoformat(),
                     "duration_minutes": matched_duration,
+                    "revenue_amount": amount,
+                    "notes": appt_notes,
                     "google_event_id": google_event_id,
                     "status": "scheduled",
                     "booked_by": "ai"
@@ -535,8 +578,6 @@ Extract intent. Return ONLY JSON format:
                     asyncio.create_task(ehr_sync_service.sync_appointment(clinic_id, appt_id))
                 
                 # Safe Revenue Event insertion
-                fee_to_record = matched_fee if (matched_fee is not None and matched_fee > 0) else (clinic_data.get("monthly_revenue_per_visit") or 150 if isinstance(clinic_data, dict) else 150)
-                amount = int(fee_to_record * 100)
                 await revenue_service.record_event(clinic_id, "after_hours_booked", amount, appt_id, "AI Booked Appointment")
                 
                 # Send booking confirmation SMS if enabled

@@ -1,7 +1,16 @@
 import asyncio
 from typing import Optional, List, Dict, Any
 import datetime
+import uuid
 from ..core.database import supabase
+
+def _safe_uuid(val: Any, default: str = "3c174875-166a-4639-a669-463b03e03d3c") -> str:
+    if not val:
+        return default
+    try:
+        return str(uuid.UUID(str(val)))
+    except Exception:
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, str(val)))
 
 class SessionService:
     async def create_session(
@@ -17,9 +26,9 @@ class SessionService:
         """
         try:
             insert_data = {
-                "user_id": user_id,
+                "user_id": _safe_uuid(user_id),
                 "email": email,
-                "clinic_id": clinic_id if clinic_id else None,
+                "clinic_id": _safe_uuid(clinic_id) if clinic_id else None,
                 "ip_address": ip_address,
                 "user_agent": user_agent,
                 "is_active": True
@@ -36,11 +45,12 @@ class SessionService:
         Get all active sessions for a specific user.
         """
         try:
+            safe_uid = _safe_uuid(user_id)
             res = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: supabase.table("user_sessions")
                 .select("id, ip_address, user_agent, last_active, created_at")
-                .eq("user_id", user_id)
+                .eq("user_id", safe_uid)
                 .eq("is_active", True)
                 .order("last_active", desc=True)
                 .execute()
@@ -55,12 +65,13 @@ class SessionService:
         Terminate a specific login session.
         """
         try:
+            safe_uid = _safe_uuid(user_id)
             res = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: supabase.table("user_sessions")
                 .update({"is_active": False})
                 .eq("id", session_id)
-                .eq("user_id", user_id)
+                .eq("user_id", safe_uid)
                 .execute()
             )
             return bool(res.data)
@@ -73,7 +84,8 @@ class SessionService:
         Force-logout a user from all other devices.
         """
         try:
-            query = supabase.table("user_sessions").update({"is_active": False}).eq("user_id", user_id)
+            safe_uid = _safe_uuid(user_id)
+            query = supabase.table("user_sessions").update({"is_active": False}).eq("user_id", safe_uid)
             if exclude_session_id:
                 query = query.neq("id", exclude_session_id)
                 
@@ -91,11 +103,12 @@ class SessionService:
         Update the last_active timestamp of the user's latest session.
         """
         try:
+            safe_uid = _safe_uuid(user_id)
             # Asynchronously update in background
             async def _update():
                 try:
                     # Get the most recent active session
-                    recent_res = supabase.table("user_sessions").select("id").eq("user_id", user_id).eq("is_active", True).order("last_active", desc=True).limit(1).execute()
+                    recent_res = supabase.table("user_sessions").select("id").eq("user_id", safe_uid).eq("is_active", True).order("last_active", desc=True).limit(1).execute()
                     if recent_res.data:
                         session_id = recent_res.data[0]["id"]
                         update_data = {"last_active": datetime.datetime.now(datetime.timezone.utc).isoformat()}

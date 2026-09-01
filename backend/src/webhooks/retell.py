@@ -214,7 +214,16 @@ async def handle_inbound(req: RetellInboundRequest, request: Request, db: AsyncS
     # Format business hours string if dict
     bh_raw = settings_data.get("business_hours") if settings_data else None
     if isinstance(bh_raw, dict):
-        hours_display = ", ".join(f"{k}: {v}" for k, v in bh_raw.items())
+        hours_parts = []
+        for k, v in bh_raw.items():
+            if str(k).startswith("_"):
+                continue
+            hours_parts.append(f"{k}: {v}")
+        if "_lunch_break" in bh_raw and isinstance(bh_raw["_lunch_break"], dict):
+            lb = bh_raw["_lunch_break"]
+            if lb.get("enabled"):
+                hours_parts.append(f"lunch break: {lb.get('start', '12:00')}–{lb.get('end', '13:00')}")
+        hours_display = ", ".join(hours_parts) if hours_parts else "Monday to Friday 8:00 AM - 5:00 PM"
     elif isinstance(bh_raw, str):
         hours_display = bh_raw
     else:

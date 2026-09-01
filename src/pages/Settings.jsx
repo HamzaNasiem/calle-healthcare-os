@@ -59,7 +59,8 @@ import {
   UserX,
   AlertOctagon,
   Archive,
-  Hash
+  Hash,
+  Stethoscope
 } from "lucide-react";
 import api from "../lib/api";
 import SecuritySettings from "../components/SecuritySettings";
@@ -87,6 +88,20 @@ const CREDENTIAL_PRESETS = [
   "PhD",
   "MS",
   "OTD"
+];
+
+const FALLBACK_LANGUAGES = [
+  { value: "es-MX", label: "Spanish (Mexico & Latin America) — es-MX" },
+  { value: "en-US", label: "English (United States) — en-US" },
+  { value: "es-ES", label: "Spanish (Spain) — es-ES" },
+  { value: "fr-CA", label: "French (Canada) — fr-CA" },
+  { value: "zh-CN", label: "Mandarin Chinese (Simplified) — zh-CN" },
+  { value: "vi-VN", label: "Vietnamese — vi-VN" },
+  { value: "tl-PH", label: "Tagalog (Philippines) — tl-PH" },
+  { value: "ar-SA", label: "Arabic (Standard) — ar-SA" },
+  { value: "pt-BR", label: "Portuguese (Brazil) — pt-BR" },
+  { value: "ko-KR", label: "Korean — ko-KR" },
+  { value: "de-DE", label: "German — de-DE" }
 ];
 
 const US_TIMEZONES = [
@@ -289,10 +304,15 @@ const Settings = () => {
 
   // Doctor fields
   const [doctorName, setDoctorName] = useState("");
+  const [doctorTitle, setDoctorTitle] = useState("");
+  const [doctorSpecialty, setDoctorSpecialty] = useState("");
   const [doctorCredentials, setDoctorCredentials] = useState("");
   const [doctorPhone, setDoctorPhone] = useState("");
   const [npiNumber, setNpiNumber] = useState("");
+  const [deaNumber, setDeaNumber] = useState("");
   const [medicalLicense, setMedicalLicense] = useState("");
+  const [doctorBio, setDoctorBio] = useState("");
+  const [providersList, setProvidersList] = useState([]);
   const [doctorErrors, setDoctorErrors] = useState({});
 
   const toggleCredential = (cred) => {
@@ -316,6 +336,14 @@ const Settings = () => {
     setNpiNumber(digits);
     if (doctorErrors.npiNumber) {
       setDoctorErrors(prev => ({ ...prev, npiNumber: null }));
+    }
+  };
+
+  const handleDeaChange = (val) => {
+    const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
+    setDeaNumber(clean);
+    if (doctorErrors.deaNumber) {
+      setDoctorErrors(prev => ({ ...prev, deaNumber: null }));
     }
   };
 
@@ -355,6 +383,23 @@ const Settings = () => {
   const [revenuePerVisit, setRevenuePerVisit] = useState(150);
   const [recallDays, setRecallDays] = useState("30, 60, 90");
   const [benchmarkOptIn, setBenchmarkOptIn] = useState(false);
+
+  // Advanced: Prompt variables, language, concurrency, and retention
+  const [customPromptVariables, setCustomPromptVariables] = useState({
+    clinic_motto: "Compassionate Care Close to Home",
+    emergency_escalation_protocol: "Transfer immediately to triage or advise calling 911",
+    parking_instructions: "Validated parking in adjacent garage",
+    cancellation_policy: "24 hours advance notice required"
+  });
+  const [newVarKey, setNewVarKey] = useState("");
+  const [newVarVal, setNewVarVal] = useState("");
+  const [fallbackLanguage, setFallbackLanguage] = useState("es-MX");
+  const [maxConcurrentCalls, setMaxConcurrentCalls] = useState(5);
+  const [callRecordingRetentionHours, setCallRecordingRetentionHours] = useState(24);
+  const [hipaaAutoPurgeEnabled, setHipaaAutoPurgeEnabled] = useState(true);
+  const [purgingRecordings, setPurgingRecordings] = useState(false);
+  const [purgeResult, setPurgeResult] = useState(null);
+  const [savingAdvanced, setSavingAdvanced] = useState(false);
 
   // Outbound Webhook state
   const [outboundWebhookUrl, setOutboundWebhookUrl] = useState("");
@@ -477,11 +522,11 @@ const Settings = () => {
       const clinicSpecialty = data.specialty || "General Practice";
       setSpecialty(clinicSpecialty);
       setIsCustomSpecialty(Boolean(clinicSpecialty && !SPECIALTIES.includes(clinicSpecialty) && clinicSpecialty !== "Other"));
-      setAddress(data.address || "100 Michigan Avenue");
-      setSuite(data.suite || "Suite 400");
+      setAddress(data.address !== undefined && data.address !== null ? data.address : "100 Michigan Avenue");
+      setSuite(data.suite !== undefined && data.suite !== null ? data.suite : "Suite 400");
       setCity(data.city || "Chicago");
-      setState(data.state || "IL");
-      setZipCode(data.zip_code || "60601");
+      setState(data.state !== undefined && data.state !== null ? data.state : "IL");
+      setZipCode(data.zip_code !== undefined && data.zip_code !== null ? data.zip_code : "60601");
       setTimezone(data.timezone || "America/Chicago");
       setPhoneNumber(data.phone_number || "+1 (555) 123-4567");
       setOwnerEmail(data.owner_email || "admin@sunriseclinic.com");
@@ -489,10 +534,15 @@ const Settings = () => {
       setTransferPhoneNumber(data.transfer_phone_number || data.primary_doctor_phone || data.phone_number || "+1 (555) 987-6543");
       
       setDoctorName(data.primary_doctor_name || "");
+      setDoctorTitle(data.doctor_title || "");
+      setDoctorSpecialty(data.specialty || "");
       setDoctorCredentials(data.primary_doctor_credentials || "");
       setDoctorPhone(data.primary_doctor_phone || "");
       setNpiNumber(data.npi_number || "");
+      setDeaNumber(data.dea_number || "");
       setMedicalLicense(data.medical_license || "");
+      setDoctorBio(data.bio || "");
+      setProvidersList(Array.isArray(data.providers) ? data.providers : []);
 
       // Handle business hours parsing
       setHours(parseBusinessHoursData(data.business_hours));
@@ -579,9 +629,27 @@ const Settings = () => {
       errors.doctorName = "Doctor name cannot exceed 120 characters.";
     }
 
+    // Validate Doctor Title
+    if (doctorTitle && doctorTitle.trim().length > 100) {
+      errors.doctorTitle = "Doctor title cannot exceed 100 characters.";
+    }
+
     // Validate Doctor Credentials
     if (doctorCredentials && doctorCredentials.trim().length > 60) {
       errors.doctorCredentials = "Doctor credentials cannot exceed 60 characters.";
+    }
+
+    // Validate DEA Number (if non-empty, 2 letters + 7 digits)
+    if (deaNumber && deaNumber.trim()) {
+      const cleanDea = deaNumber.trim().toUpperCase();
+      if (!/^[A-Z]{2}[0-9]{7}$/.test(cleanDea)) {
+        errors.deaNumber = "DEA Registration Number must be 2 letters followed by 7 digits (e.g. AS1234567).";
+      }
+    }
+
+    // Validate Doctor Bio
+    if (doctorBio && doctorBio.trim().length > 2000) {
+      errors.doctorBio = "Doctor biography cannot exceed 2000 characters.";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -615,12 +683,35 @@ const Settings = () => {
     if (phoneNumber && phoneNumber.trim()) {
       const digits = phoneNumber.replace(/\D/g, "");
       if (digits.length < 10 || digits.length > 15) {
-        pErrors.phoneNumber = "Patient Direct Phone must contain a valid 10-15 digit phone number.";
+        pErrors.phoneNumber = "Patient Direct Phone must contain a valid 10-15 digit phone number (E.164 compatible).";
+      }
+    }
+
+    if (transferPhoneNumber && transferPhoneNumber.trim()) {
+      const digits = transferPhoneNumber.replace(/\D/g, "");
+      if (digits.length < 10 || digits.length > 15) {
+        pErrors.transferPhoneNumber = "Transfer / Escalation Phone must contain a valid 10-15 digit phone number (E.164 compatible).";
       }
     }
 
     if (specialty && specialty.trim().length > 100) {
       pErrors.specialty = "Medical Specialty cannot exceed 100 characters.";
+    }
+
+    if (state && state.trim().length > 20) {
+      pErrors.state = "State / Province code cannot exceed 20 characters.";
+    }
+
+    if (zipCode && zipCode.trim().length > 20) {
+      pErrors.zipCode = "Zip / Postal Code cannot exceed 20 characters.";
+    }
+
+    if (address && address.trim().length > 255) {
+      pErrors.address = "Street address cannot exceed 255 characters.";
+    }
+
+    if (suite && suite.trim().length > 50) {
+      pErrors.suite = "Suite / Unit cannot exceed 50 characters.";
     }
 
     if (Object.keys(pErrors).length > 0) {
@@ -659,7 +750,7 @@ const Settings = () => {
 
       const updates = {
         name: name.trim(),
-        specialty: specialty.trim(),
+        specialty: (doctorSpecialty || specialty).trim(),
         address: (address || "").trim(),
         suite: (suite || "").trim(),
         city: city.trim(),
@@ -669,10 +760,13 @@ const Settings = () => {
         phone_number: phoneNumber.trim(),
         owner_email: ownerEmail.trim().toLowerCase(),
         primary_doctor_name: doctorName.trim(),
+        doctor_title: doctorTitle.trim(),
         primary_doctor_credentials: doctorCredentials.trim(),
         primary_doctor_phone: doctorPhone.trim(),
         npi_number: npiNumber.trim(),
+        dea_number: deaNumber.trim().toUpperCase(),
         medical_license: medicalLicense.trim(),
+        bio: doctorBio.trim(),
         emergency_protocols: (emergencyProtocols || "").trim(),
         transfer_phone_number: (transferPhoneNumber || "").trim(),
         business_hours: dbBusinessHours,
@@ -694,8 +788,11 @@ const Settings = () => {
         notifications_config: notifConfig
       };
 
-      await api.put(`/clinics/${cid}`, updates);
-      setMsg({ type: "success", text: "Clinic profile & settings saved successfully to PostgreSQL database!" });
+      const saveRes = await api.put(`/clinics/${cid}`, updates);
+      if (saveRes.data?.data?.providers) {
+        setProvidersList(saveRes.data.data.providers);
+      }
+      setMsg({ type: "success", text: "Doctor profile and clinic settings saved successfully to PostgreSQL database!" });
       
       // Update local storage and session storage so sidebar & header update immediately
       const updatedInfo = {
@@ -1455,20 +1552,36 @@ const Settings = () => {
                       <input
                         type="text"
                         value={address}
-                        onChange={(e) => setAddress(e.target.value)}
+                        onChange={(e) => {
+                          setAddress(e.target.value);
+                          if (profileErrors.address) setProfileErrors(prev => ({ ...prev, address: null }));
+                        }}
                         placeholder="e.g. 100 Michigan Avenue"
-                        className="input-field text-xs"
+                        className={`input-field text-xs ${profileErrors.address ? "border-rose-500 ring-1 ring-rose-500/30" : ""}`}
                       />
+                      {profileErrors.address && (
+                        <p className="text-[10px] text-rose-500 font-medium mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {profileErrors.address}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="overline text-[10px] block mb-1">Suite / Unit / Floor</label>
                       <input
                         type="text"
                         value={suite}
-                        onChange={(e) => setSuite(e.target.value)}
+                        onChange={(e) => {
+                          setSuite(e.target.value);
+                          if (profileErrors.suite) setProfileErrors(prev => ({ ...prev, suite: null }));
+                        }}
                         placeholder="e.g. Suite 400"
-                        className="input-field text-xs"
+                        className={`input-field text-xs ${profileErrors.suite ? "border-rose-500 ring-1 ring-rose-500/30" : ""}`}
                       />
+                      {profileErrors.suite && (
+                        <p className="text-[10px] text-rose-500 font-medium mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {profileErrors.suite}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -1498,22 +1611,38 @@ const Settings = () => {
                       <input
                         type="text"
                         value={state}
-                        onChange={(e) => setState(e.target.value)}
+                        onChange={(e) => {
+                          setState(e.target.value);
+                          if (profileErrors.state) setProfileErrors(prev => ({ ...prev, state: null }));
+                        }}
                         placeholder="e.g. IL"
-                        className="input-field text-xs uppercase"
+                        className={`input-field text-xs uppercase ${profileErrors.state ? "border-rose-500 ring-1 ring-rose-500/30" : ""}`}
                         maxLength={10}
                       />
+                      {profileErrors.state && (
+                        <p className="text-[10px] text-rose-500 font-medium mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {profileErrors.state}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="overline text-[10px] block mb-1">Zip / Postal Code</label>
                       <input
                         type="text"
                         value={zipCode}
-                        onChange={(e) => setZipCode(e.target.value)}
+                        onChange={(e) => {
+                          setZipCode(e.target.value);
+                          if (profileErrors.zipCode) setProfileErrors(prev => ({ ...prev, zipCode: null }));
+                        }}
                         placeholder="e.g. 60601"
-                        className="input-field text-xs font-mono"
+                        className={`input-field text-xs font-mono ${profileErrors.zipCode ? "border-rose-500 ring-1 ring-rose-500/30" : ""}`}
                         maxLength={12}
                       />
+                      {profileErrors.zipCode && (
+                        <p className="text-[10px] text-rose-500 font-medium mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {profileErrors.zipCode}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1624,11 +1753,12 @@ const Settings = () => {
                       {t.doctor_full_name ? "Primary Doctor & Clinician Profile" : "Primary Doctor Information"}
                     </h3>
                     <p className="text-xs text-on-surface-variant mt-1">
-                      {t.doctor_info_sub || "Clinician credentials, NPI, and state license for AI voice prompts and EHR billing verification."}
+                      {t.doctor_info_sub || "Clinician credentials, DEA registration, NPI, and clinical biography for AI voice prompts, clearinghouse claims, and multi-provider EHR sync."}
                     </p>
                   </div>
-                  <span className="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/20">
-                    Voice & EHR Synced
+                  <span className="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/20 flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5" />
+                    Voice, EHR & Providers Synced
                   </span>
                 </div>
               </div>
@@ -1637,46 +1767,121 @@ const Settings = () => {
               <div className="p-3.5 bg-surface-container-low rounded-xl border border-surface-container flex items-start gap-3">
                 <Info className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-on-surface-variant leading-relaxed">
-                  <span className="font-semibold text-on-surface">Voice AI & Billing Injection:</span> The Primary Doctor's name and credentials are dynamically injected into your CALL-E AI Voice Agent greeting and campaign prompts. The NPI number and state medical license are mapped to EHR claims and clearinghouse billing exports.
+                  <span className="font-semibold text-on-surface">Voice AI, Billing & Provider Registry Sync:</span> The Primary Doctor's name, title, credentials, and bio are dynamically injected into your CALL-E AI Voice Receptionist greeting and clinical routing prompts. The NPI and DEA numbers are mapped to clearinghouse claims and e-prescribing registries. Multi-provider clinics automatically synchronize with the PostgreSQL <span className="font-mono text-primary font-semibold">providers</span> table for appointment booking.
                 </div>
               </div>
 
               <div className="space-y-5">
-                {/* Field 1: Doctor Full Name */}
+                {/* Field 1 & 2 Grid: Doctor Full Name & Title */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Doctor Full Name */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="overline">Doctor Full Name</p>
+                      <span className="text-[10px] text-on-surface-variant/70 font-mono">Max 120 chars</span>
+                    </div>
+                    <div className={`flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors ${
+                      doctorErrors.doctorName ? "border border-rose-500 ring-1 ring-rose-500/30" : ""
+                    }`}>
+                      <User className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={doctorName}
+                        onChange={(e) => {
+                          setDoctorName(e.target.value);
+                          if (doctorErrors.doctorName) {
+                            setDoctorErrors(prev => ({ ...prev, doctorName: null }));
+                          }
+                        }}
+                        maxLength={120}
+                        className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface placeholder:text-on-surface-variant/40"
+                        placeholder="e.g. Dr. Alexander Sunrise, MD"
+                      />
+                    </div>
+                    {doctorErrors.doctorName && (
+                      <p className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {doctorErrors.doctorName}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-on-surface-variant/70 mt-1">
+                      Formal name introduced by AI Voice Receptionist when callers connect.
+                    </p>
+                  </div>
+
+                  {/* Doctor Title / Clinical Role */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="overline">Doctor Professional Title / Clinical Role</p>
+                      <span className="text-[10px] text-on-surface-variant/70 font-mono">Max 100 chars</span>
+                    </div>
+                    <div className={`flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors ${
+                      doctorErrors.doctorTitle ? "border border-rose-500 ring-1 ring-rose-500/30" : ""
+                    }`}>
+                      <Briefcase className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={doctorTitle}
+                        onChange={(e) => {
+                          setDoctorTitle(e.target.value);
+                          if (doctorErrors.doctorTitle) {
+                            setDoctorErrors(prev => ({ ...prev, doctorTitle: null }));
+                          }
+                        }}
+                        maxLength={100}
+                        className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface placeholder:text-on-surface-variant/40"
+                        placeholder="e.g. Medical Director & Attending Physician"
+                      />
+                    </div>
+                    {doctorErrors.doctorTitle && (
+                      <p className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {doctorErrors.doctorTitle}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-on-surface-variant/70 mt-1">
+                      Position held within the clinical practice and patient care team.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Field 3: Doctor Clinical Specialty */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <p className="overline">Doctor Full Name</p>
-                    <span className="text-[10px] text-on-surface-variant/70 font-mono">Max 120 chars</span>
+                    <p className="overline">Doctor Clinical Specialty</p>
+                    <span className="text-[10px] text-on-surface-variant/70 font-mono">Voice routing & provider registry</span>
                   </div>
-                  <div className={`flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors ${
-                    doctorErrors.doctorName ? "border border-rose-500 ring-1 ring-rose-500/30" : ""
-                  }`}>
-                    <User className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
+                  <div className="flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors">
+                    <Stethoscope className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
                     <input
                       type="text"
-                      value={doctorName}
-                      onChange={(e) => {
-                        setDoctorName(e.target.value);
-                        if (doctorErrors.doctorName) {
-                          setDoctorErrors(prev => ({ ...prev, doctorName: null }));
-                        }
-                      }}
-                      maxLength={120}
+                      value={doctorSpecialty || specialty}
+                      onChange={(e) => setDoctorSpecialty(e.target.value)}
+                      maxLength={100}
                       className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface placeholder:text-on-surface-variant/40"
-                      placeholder="e.g. Dr. Hamza Nasiem"
+                      placeholder="e.g. Physical Therapy & Sports Rehab"
                     />
                   </div>
-                  {doctorErrors.doctorName && (
-                    <p className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> {doctorErrors.doctorName}
-                    </p>
-                  )}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {SPECIALTIES.slice(0, 7).map(spec => (
+                      <button
+                        key={spec}
+                        type="button"
+                        onClick={() => setDoctorSpecialty(spec)}
+                        className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                          (doctorSpecialty || specialty) === spec
+                            ? "bg-primary text-white border-primary"
+                            : "bg-surface-container hover:bg-surface-container-high text-on-surface-variant border-surface-container"
+                        }`}
+                      >
+                        {spec}
+                      </button>
+                    ))}
+                  </div>
                   <p className="text-[11px] text-on-surface-variant/70 mt-1">
-                    Formal name introduced by AI Voice Receptionist when patients call the clinic.
+                    Specialty used when AI receptionist schedules triage appointments and matches patient concerns.
                   </p>
                 </div>
 
-                {/* Field 2: Doctor Credentials & Degrees */}
+                {/* Field 4: Doctor Credentials & Degrees */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <p className="overline">Doctor Credentials & Degrees</p>
@@ -1721,7 +1926,7 @@ const Settings = () => {
                       }}
                       maxLength={60}
                       className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface placeholder:text-on-surface-variant/40"
-                      placeholder="e.g. PT, DPT, OCS (Doctor of Physical Therapy)"
+                      placeholder="e.g. MD, FACP, PT, DPT"
                     />
                   </div>
                   {doctorErrors.doctorCredentials && (
@@ -1734,7 +1939,7 @@ const Settings = () => {
                   </p>
                 </div>
 
-                {/* Field 3: Doctor Direct Phone / Backline */}
+                {/* Field 5: Doctor Direct Phone / Backline */}
                 <div>
                   <p className="overline mb-1.5">Doctor Direct Phone / Clinic Backline</p>
                   <div className={`flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors ${
@@ -1751,7 +1956,7 @@ const Settings = () => {
                         }
                       }}
                       className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface font-mono placeholder:text-on-surface-variant/40"
-                      placeholder="e.g. +1 (555) 999-8888"
+                      placeholder="e.g. +1 (555) 999-0000"
                     />
                   </div>
                   {doctorErrors.doctorPhone && (
@@ -1764,8 +1969,8 @@ const Settings = () => {
                   </p>
                 </div>
 
-                {/* Field 4 & 5 Grid: NPI Number & Medical License */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                {/* Field 6, 7, 8 Grid: NPI Number, DEA Number & Medical License */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
                   {/* NPI Number */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
@@ -1791,7 +1996,7 @@ const Settings = () => {
                         maxLength={10}
                         inputMode="numeric"
                         className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface font-mono tracking-wider placeholder:text-on-surface-variant/40"
-                        placeholder="e.g. 1234567890"
+                        placeholder="e.g. 1982736450"
                       />
                     </div>
                     {doctorErrors.npiNumber && (
@@ -1800,7 +2005,44 @@ const Settings = () => {
                       </p>
                     )}
                     <p className="text-[11px] text-on-surface-variant/70 mt-1">
-                      10-digit CMS unique healthcare identifier for billing claims and HIPAA compliance.
+                      10-digit CMS unique identifier for billing claims and HIPAA compliance.
+                    </p>
+                  </div>
+
+                  {/* DEA Registration Number */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="overline">DEA Registration Number</p>
+                      {deaNumber && /^[A-Z]{2}[0-9]{7}$/.test(deaNumber) ? (
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          ✓ DEA Verified
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-on-surface-variant/70 font-mono">
+                          2 letters + 7 digits
+                        </span>
+                      )}
+                    </div>
+                    <div className={`flex gap-2.5 items-center input-field bg-surface-container-highest transition-colors ${
+                      doctorErrors.deaNumber ? "border border-rose-500 ring-1 ring-rose-500/30" : ""
+                    }`}>
+                      <Shield className="w-4 h-4 text-on-surface-variant flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={deaNumber}
+                        onChange={(e) => handleDeaChange(e.target.value)}
+                        maxLength={9}
+                        className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface font-mono uppercase tracking-wider placeholder:text-on-surface-variant/40"
+                        placeholder="e.g. AS1234567"
+                      />
+                    </div>
+                    {doctorErrors.deaNumber && (
+                      <p className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {doctorErrors.deaNumber}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-on-surface-variant/70 mt-1">
+                      Federal Drug Enforcement Administration prescribing authority identifier.
                     </p>
                   </div>
 
@@ -1820,7 +2062,7 @@ const Settings = () => {
                         onChange={(e) => handleLicenseChange(e.target.value)}
                         maxLength={50}
                         className="flex-1 bg-transparent outline-none border-none text-sm text-on-surface font-mono uppercase placeholder:text-on-surface-variant/40"
-                        placeholder="e.g. PT-048291 or MD-982314"
+                        placeholder="e.g. MD-982314"
                       />
                     </div>
                     {doctorErrors.medicalLicense && (
@@ -1834,10 +2076,115 @@ const Settings = () => {
                   </div>
                 </div>
 
+                {/* Field 9: Doctor Clinical Biography & Voice AI Introduction */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="overline">Clinical Biography & AI Voice Agent Persona</p>
+                    <span className="text-[10px] text-on-surface-variant/70 font-mono">{doctorBio.length}/2000 chars</span>
+                  </div>
+                  <div className={`p-3 input-field bg-surface-container-highest transition-colors ${
+                    doctorErrors.doctorBio ? "border border-rose-500 ring-1 ring-rose-500/30" : ""
+                  }`}>
+                    <textarea
+                      rows={3}
+                      value={doctorBio}
+                      onChange={(e) => {
+                        setDoctorBio(e.target.value);
+                        if (doctorErrors.doctorBio) {
+                          setDoctorErrors(prev => ({ ...prev, doctorBio: null }));
+                        }
+                      }}
+                      maxLength={2000}
+                      className="w-full bg-transparent outline-none border-none text-sm text-on-surface placeholder:text-on-surface-variant/40 resize-y"
+                      placeholder="e.g. Board-certified clinician specializing in rehabilitative medicine and sports injury recovery with over 15 years of clinical practice."
+                    />
+                  </div>
+                  {doctorErrors.doctorBio && (
+                    <p className="text-xs text-rose-500 font-medium mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" /> {doctorErrors.doctorBio}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-on-surface-variant/70 mt-1">
+                    Summarizes doctor's background and clinical approach; injected into AI receptionist answers when callers ask about the doctor's experience.
+                  </p>
+                </div>
+
+                {/* Multi-Provider Registry Sync Section */}
+                <div className="p-4 bg-surface-container-low rounded-xl border border-surface-container space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-primary" />
+                      <h4 className="text-xs font-bold text-on-surface uppercase tracking-wider">
+                        Multi-Provider Clinic Synchronization
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                      PostgreSQL `providers` Table Connected ({providersList.length} Clinicians)
+                    </span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant leading-relaxed">
+                    Saving doctor info synchronizes the primary clinician directly into the clinic's multi-provider registry. The AI Voice Receptionist cross-references these clinicians when booking appointments and routing patient calls.
+                  </p>
+
+                  {providersList.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                      {providersList.map((prov) => {
+                        const isPrimary = doctorName && prov.display_name && prov.display_name.toLowerCase().includes(doctorName.toLowerCase().split(",")[0].trim());
+                        return (
+                          <div
+                            key={prov.id}
+                            className={`p-3 rounded-lg border flex items-start justify-between gap-2 transition-all ${
+                              isPrimary
+                                ? "bg-primary/5 border-primary/30 ring-1 ring-primary/20"
+                                : "bg-surface-container border-surface-container"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-bold text-on-surface truncate">{prov.display_name}</p>
+                                {isPrimary && (
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.2 rounded bg-primary text-white">
+                                    Primary
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-on-surface-variant truncate mt-0.5">
+                                {prov.title || prov.specialty || "Clinician"}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1.5 text-[10px] text-on-surface-variant/80">
+                                {prov.npi_number && (
+                                  <span className="font-mono">NPI: {prov.npi_number}</span>
+                                )}
+                                {prov.dea_number && (
+                                  <span className="font-mono">DEA: {prov.dea_number}</span>
+                                )}
+                              </div>
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                                prov.is_accepting_patients
+                                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                  : "bg-surface-container text-on-surface-variant"
+                              }`}
+                            >
+                              {prov.is_accepting_patients ? "Accepting" : "Paused"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-surface-container rounded-lg text-xs text-on-surface-variant flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                      Loading providers from PostgreSQL database...
+                    </div>
+                  )}
+                </div>
+
                 {/* Doctor Tab Save Bar */}
                 <div className="pt-4 border-t border-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <span className="text-xs text-on-surface-variant">
-                    Doctor credentials, NPI, and license sync directly to Voice AI prompts, call routing, and EHR billing records.
+                    Primary doctor credentials, NPI, DEA, and specialty synchronize directly to Voice AI prompts, call routing, and PostgreSQL `providers` table.
                   </span>
                   <button
                     onClick={handleSave}
