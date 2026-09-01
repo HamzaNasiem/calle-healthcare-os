@@ -478,29 +478,57 @@ class AnalyticsService:
     get_peak_hours_distribution = get_call_density_heatmap
     get_call_metrics = get_calls_analytics
 
+    def _mask_phi_patient(self, patient: Dict[str, Any], is_privileged: bool) -> Dict[str, Any]:
+        """
+        Masks patient PHI (name, phone, email) if user role is not privileged.
+        Privileged roles: owner, clinician, admin.
+        """
+        if is_privileged:
+            return patient
+        
+        masked = dict(patient)
+        name = patient.get("name")
+        if name:
+            parts = str(name).split(" ")
+            masked["name"] = " ".join([f"{p[0]}***" if len(p) > 1 else p for p in parts if p])
+        
+        phone = patient.get("phone")
+        if phone:
+            digits = "".join(filter(str.isdigit, str(phone)))
+            masked["phone"] = f"***-***-{digits[-4:]}" if len(digits) >= 4 else "****"
+            
+        email = patient.get("email")
+        if email and "@" in str(email):
+            n, d = str(email).split("@", 1)
+            masked["email"] = f"{n[0]}***@{d}" if len(n) > 0 else f"***@{d}"
+            
+        return masked
+
     async def get_patients_analytics(
         self,
         clinic_id: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        preset: Optional[Any] = None
+        preset: Optional[Any] = None,
+        user_role: Optional[str] = "clinician"
     ) -> Dict[str, Any]:
         """
         Calculates patient demographics, new vs returning ratio, average LTV, VIP leaderboard,
-        and high churn-risk watchlist.
+        and high churn-risk watchlist with role-based PHI masking.
         """
         start_dt, end_dt, _, _, _ = self.parse_date_range(preset, start_date, end_date)
+        is_privileged = (user_role or "clinician").lower() in ["owner", "clinician", "admin"]
 
-        # 1. Fetch patients
+        # 1. Fetch patients with lifetime stats
         patients_res = supabase_read.table("patients").select(
-            "id, name, email, phone, created_at, is_vip, churn_risk_score, total_revenue_generated, average_visit_value, last_visit_date"
+            "id, name, email, phone, created_at, is_vip, churn_risk_score, total_revenue_generated, average_visit_value, total_visits, last_visit_date, no_show_count"
         ).eq("clinic_id", clinic_id).execute()
 
         patients = patients_res.data or []
         total_patients = len(patients)
 
         # 2. Fetch completed appointments in selected date range
-        appts_res = supabase_read.table("appointments").select("patient_id, status") \
+        appts_res = supabase_read.table("appointments").select("patient_id, status, datetime, revenue_amount") \
             .eq("clinic_id", clinic_id) \
             .eq("status", "completed") \
             .gte("datetime", start_dt.isoformat()) \
@@ -510,6 +538,13 @@ class AnalyticsService:
         appts = appts_res.data or []
         active_patient_ids = set(a["patient_id"] for a in appts if a.get("patient_id"))
 
+        # Build map of appointment revenue per patient
+        appt_rev_map: Dict[str, float] = {}
+        for a in appts:
+            pid = a.get("patient_id")
+            if pid:
+                appt_rev_map[pid] = appt_rev_map.get(pid, 0.0) + float(a.get("revenue_amount") or 0.0)
+
         # Calculate new vs returning patients
         new_count = 0
         returning_count = 0
@@ -517,38 +552,112 @@ class AnalyticsService:
         end_iso = end_dt.isoformat()
 
         total_revenue_acc = 0.0
+        processed_patients = []
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+
         for p in patients:
+            pid = p.get("id")
             p_created = p.get("created_at")
-            p_rev = float(p.get("total_revenue_generated") or 0.0)
+            
+            # Base lifetime revenue from patient record, supplemented by completed appointment revenue if zero
+            stored_rev = float(p.get("total_revenue_generated") or 0.0)
+            completed_appt_rev = appt_rev_map.get(pid, 0.0)
+            p_rev = stored_rev if stored_rev > 0 else completed_appt_rev
             total_revenue_acc += p_rev
+
+            p_copy = dict(p)
+            p_copy["total_revenue_generated"] = p_rev
 
             if p_created and start_iso <= p_created <= end_iso:
                 new_count += 1
-            elif p.get("id") in active_patient_ids:
+            elif pid in active_patient_ids:
                 returning_count += 1
+
+            # Dynamic Churn Risk calculation if stored score is 0.0 or missing
+            current_churn = float(p.get("churn_risk_score") or 0.0)
+            if current_churn <= 0.0 and p.get("last_visit_date"):
+                try:
+                    last_v_date = datetime.date.fromisoformat(str(p["last_visit_date"]))
+                    days_since = (today - last_v_date).days
+                    v_count = int(p.get("total_visits") or 1)
+                    
+                    if v_count >= 5 and days_since >= 90:
+                        current_churn = min(1.0, 0.65 + (days_since - 90) / 100.0)
+                    elif v_count >= 2 and days_since >= 60:
+                        current_churn = min(1.0, 0.40 + (days_since - 60) / 120.0)
+                    elif days_since >= 180:
+                        current_churn = min(1.0, days_since / 365.0)
+                except Exception:
+                    pass
+            
+            # Elevate churn risk if no-show history is high
+            if int(p.get("no_show_count") or 0) >= 2:
+                current_churn = max(current_churn, 0.60)
+
+            p_copy["churn_risk_score"] = float(round(max(0.0, min(1.0, current_churn)), 2))
+            processed_patients.append(p_copy)
 
         avg_ltv = round(total_revenue_acc / max(1, total_patients), 2) if total_patients > 0 else 0.0
 
-        # Top VIP list (highest revenue generated)
-        vips = [p for p in patients if p.get("is_vip") or float(p.get("total_revenue_generated") or 0.0) > 300.0]
+        # Top VIP list: patients marked as VIP or with revenue > 300, sorted descending
+        vips = [p for p in processed_patients if p.get("is_vip") or float(p.get("total_revenue_generated") or 0.0) > 300.0]
+        if not vips:
+            vips = [p for p in processed_patients if float(p.get("total_revenue_generated") or 0.0) > 0]
         vips_sorted = sorted(vips, key=lambda x: float(x.get("total_revenue_generated") or 0.0), reverse=True)[:10]
 
-        # Churn risk patients (churn_risk_score >= 0.4 or overdue)
-        churn_risk_patients = [p for p in patients if float(p.get("churn_risk_score") or 0.0) >= 0.4]
+        # Churn risk patients (churn_risk_score >= 0.40)
+        churn_risk_patients = [p for p in processed_patients if float(p.get("churn_risk_score") or 0.0) >= 0.40]
         churn_sorted = sorted(churn_risk_patients, key=lambda x: float(x.get("churn_risk_score") or 0.0), reverse=True)[:10]
+
+        # Apply PHI masking
+        masked_vips = [self._mask_phi_patient(p, is_privileged) for p in vips_sorted]
+        masked_churn = [self._mask_phi_patient(p, is_privileged) for p in churn_sorted]
 
         return {
             "ratio": [
                 {"name": "New Patients", "value": new_count},
                 {"name": "Returning Patients", "value": returning_count}
             ],
-            "vip_list": vips_sorted,
-            "churn_risk_list": churn_sorted,
+            "vip_list": masked_vips,
+            "churn_risk_list": masked_churn,
             "total_patients": total_patients,
             "new_patients_count": new_count,
             "returning_patients_count": returning_count,
             "average_ltv": avg_ltv
         }
+
+    async def get_vip_patients(
+        self,
+        clinic_id: str,
+        limit: int = 10,
+        user_role: Optional[str] = "clinician"
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns VIP patient leaderboard with lifetime value, visits, and role-based PHI masking.
+        """
+        data = await self.get_patients_analytics(clinic_id=clinic_id, user_role=user_role)
+        vip_list = data.get("vip_list", [])
+        return vip_list[:limit]
+
+    async def calculate_retention_cohorts(
+        self,
+        clinic_id: str,
+        preset: Optional[Any] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        user_role: Optional[str] = "clinician"
+    ) -> Dict[str, Any]:
+        """
+        Calculates patient retention cohorts, new vs returning ratio, average LTV,
+        and high churn-risk watchlist.
+        """
+        return await self.get_patients_analytics(
+            clinic_id=clinic_id,
+            preset=preset,
+            start_date=start_date,
+            end_date=end_date,
+            user_role=user_role
+        )
 
     async def calculate_ltv(
         self,
@@ -1063,43 +1172,58 @@ class AnalyticsService:
         """
         return await self.get_campaign_analytics(clinic_id, start_date, end_date, preset)
 
-    async def get_roi_kpis(
+    async def calculate_staff_roi(
         self,
         clinic_id: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         preset: Optional[Any] = None,
         staff_hourly_wage: float = 25.0,
-        avg_visit_value: float = 150.0
+        avg_visit_value: float = 150.0,
+        daily_call_volume: Optional[int] = None,
+        avg_mins_per_call: float = 4.5,
+        clinic_days_per_month: int = 22
     ) -> Dict[str, Any]:
         """
-        Calculates Staff Hours Saved per Week and full economic ROI for clinic practice leadership.
+        Calculates staff labor hours saved, direct payroll cost savings, and practice ROI
+        using live database call counts and customizable economic parameters.
+        Formulas:
+          - Hours Saved = (Total AI Calls * avg_mins_per_call) / 60
+          - Dollar Savings = Hours Saved * staff_hourly_wage
         """
         start_dt, end_dt, _, _, period_days = self.parse_date_range(preset, start_date, end_date)
         period_weeks = max(0.14, round(period_days / 7.0, 2))
 
-        # 1. Total Calls Handled (Inbound)
-        calls_res = supabase_read.table("calls").select("id, status") \
-            .eq("clinic_id", clinic_id) \
-            .gte("started_at", start_dt.isoformat()) \
-            .lte("started_at", end_dt.isoformat()) \
-            .execute()
+        # 1. Total Calls Handled (Inbound & General from calls table)
+        # Filter on created_at so calls with NULL started_at are included
+        calls_res = supabase_read.table("calls").select(
+            "id, status, outcome, direction, call_type, duration_seconds, created_at, started_at"
+        ).eq("clinic_id", clinic_id) \
+         .gte("created_at", start_dt.isoformat()) \
+         .lte("created_at", end_dt.isoformat()) \
+         .execute()
         
-        total_calls = len(calls_res.data or [])
+        calls = calls_res.data or []
+        total_calls = len(calls)
+        inbound_calls_count = sum(1 for c in calls if c.get("direction") == "inbound" or not c.get("direction"))
 
         # 2. Total Outbound Campaign Calls
-        outbound_res = supabase_read.table("outbound_calls").select("id, campaign_type, task_completed") \
-            .eq("clinic_id", clinic_id) \
-            .gte("created_at", start_dt.isoformat()) \
-            .lte("created_at", end_dt.isoformat()) \
-            .execute()
+        outbound_res = supabase_read.table("outbound_calls").select(
+            "id, campaign_type, status, task_completed, created_at"
+        ).eq("clinic_id", clinic_id) \
+         .gte("created_at", start_dt.isoformat()) \
+         .lte("created_at", end_dt.isoformat()) \
+         .execute()
         
         outbound_calls = outbound_res.data or []
         confirmations_count = sum(1 for c in outbound_calls if c.get("campaign_type") == "confirmation")
         noshow_recalls_count = len(outbound_calls) - confirmations_count
 
-        # 3. Appointments Confirmed & Saved
-        appts_res = supabase_read.table("appointments").select("id, status, confirmed_at, reminder_sent") \
+        # Total AI calls handled dynamically from database
+        total_ai_calls = total_calls + len(outbound_calls)
+
+        # 3. Appointments Confirmed & Protected
+        appts_res = supabase_read.table("appointments").select("id, status, confirmed_at, reminder_sent, datetime") \
             .eq("clinic_id", clinic_id) \
             .gte("datetime", start_dt.isoformat()) \
             .lte("datetime", end_dt.isoformat()) \
@@ -1108,28 +1232,39 @@ class AnalyticsService:
         appts = appts_res.data or []
         confirmed_count = sum(1 for a in appts if a.get("confirmed_at") or a.get("status") == "confirmed" or a.get("reminder_sent"))
 
-        # Minutes saved model:
-        # - Inbound AI call handled: 4.5 minutes saved (patient triage + booking + answering questions)
-        # - Outbound confirmation call / reminder: 3.0 minutes saved
-        # - Recall outreach / no-show follow-up: 5.0 minutes saved
-        minutes_inbound = total_calls * 4.5
-        minutes_confirmations = max(confirmations_count, confirmed_count) * 3.0
+        # Accurate economic calculation formulas:
+        # Hours Saved = (Total AI Calls * avg_mins_per_call) / 60
+        # Dollar Savings = Hours Saved * hourly_wage
+        total_minutes_saved = round(total_ai_calls * avg_mins_per_call, 1)
+        total_hours_saved = round((total_ai_calls * avg_mins_per_call) / 60.0, 1)
+        hours_saved_per_week = round(total_hours_saved / period_weeks, 1) if period_weeks > 0 else 0.0
+        staff_cost_saved = round(total_hours_saved * staff_hourly_wage, 2)
+
+        # Breakdown methodology:
+        # - Inbound AI call triage: avg_mins_per_call (e.g. 4.5m)
+        # - Outbound confirmation: 3.0m
+        # - Recall outreach / follow-up: 5.0m
+        minutes_inbound = inbound_calls_count * avg_mins_per_call
+        total_confirmations = max(confirmations_count, confirmed_count)
+        minutes_confirmations = total_confirmations * 3.0
         minutes_recalls = noshow_recalls_count * 5.0
 
-        total_minutes_saved = minutes_inbound + minutes_confirmations + minutes_recalls
-        total_hours_saved = round(total_minutes_saved / 60.0, 1)
-        hours_saved_per_week = round(total_hours_saved / period_weeks, 1)
-
-        # Financial savings
-        staff_cost_saved = round(total_hours_saved * staff_hourly_wage, 2)
-        
-        # Revenue protected by reducing no-shows
-        protected_appts_count = max(0, int(len(appts) * 0.08))  # estimated 8% no-show deflection
+        # Revenue protected by automated no-show reduction (~8% deflection)
+        protected_appts_count = max(0, int(len(appts) * 0.08))
         revenue_protected = round(protected_appts_count * avg_visit_value, 2)
 
         total_economic_benefit = round(staff_cost_saved + revenue_protected, 2)
         monthly_software_cost = 299.0
-        roi_multiplier = round((total_economic_benefit / max(1.0, (monthly_software_cost * (period_days / 30.0)))), 1)
+        period_software_cost = max(1.0, monthly_software_cost * (period_days / 30.0))
+        roi_multiplier = round(total_economic_benefit / period_software_cost, 1) if period_software_cost > 0 else 0.0
+
+        # Monthly & Annual Projections based on clinic calibration sliders
+        effective_daily_calls = daily_call_volume if daily_call_volume is not None else max(10, round(total_ai_calls / max(1, period_days)) or 35)
+        monthly_projected_calls = int(effective_daily_calls * clinic_days_per_month)
+        monthly_projected_hours = round((monthly_projected_calls * avg_mins_per_call) / 60.0, 1)
+        monthly_projected_cost_saved = round(monthly_projected_hours * staff_hourly_wage, 2)
+        projected_annual_savings = round(monthly_projected_cost_saved * 12.0, 2)
+        projected_weekly_hours = round(monthly_projected_hours / 4.33, 1)
 
         return {
             "staff_hours_saved_total": total_hours_saved,
@@ -1139,20 +1274,56 @@ class AnalyticsService:
             "revenue_protected": revenue_protected,
             "total_economic_benefit": total_economic_benefit,
             "roi_multiplier": roi_multiplier,
+            "total_ai_calls": total_ai_calls,
             "inputs": {
                 "staff_hourly_wage": staff_hourly_wage,
                 "avg_visit_value": avg_visit_value,
+                "daily_call_volume": effective_daily_calls,
+                "avg_mins_per_call": avg_mins_per_call,
+                "clinic_days_per_month": clinic_days_per_month,
                 "period_days": period_days,
                 "period_weeks": period_weeks
             },
+            "projections": {
+                "monthly_calls": monthly_projected_calls,
+                "monthly_hours_saved": monthly_projected_hours,
+                "monthly_cost_saved": monthly_projected_cost_saved,
+                "annual_savings": projected_annual_savings,
+                "weekly_hours_saved": projected_weekly_hours
+            },
             "breakdown": {
-                "inbound_calls_count": total_calls,
+                "inbound_calls_count": inbound_calls_count,
                 "inbound_hours_saved": round(minutes_inbound / 60.0, 1),
-                "confirmations_count": max(confirmations_count, confirmed_count),
+                "confirmations_count": total_confirmations,
                 "confirmations_hours_saved": round(minutes_confirmations / 60.0, 1),
+                "outreach_count": noshow_recalls_count,
                 "outreach_hours_saved": round(minutes_recalls / 60.0, 1)
             }
         }
+
+    async def get_roi_kpis(
+        self,
+        clinic_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        preset: Optional[Any] = None,
+        staff_hourly_wage: float = 25.0,
+        avg_visit_value: float = 150.0,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Calculates Staff Hours Saved per Week and full economic ROI for clinic practice leadership.
+        Wrapper around calculate_staff_roi for backwards compatibility.
+        """
+        return await self.calculate_staff_roi(
+            clinic_id=clinic_id,
+            start_date=start_date,
+            end_date=end_date,
+            preset=preset,
+            staff_hourly_wage=staff_hourly_wage,
+            avg_visit_value=avg_visit_value,
+            **kwargs
+        )
 
     async def generate_ai_insights(self, clinic_id: str, force: bool = False) -> Dict[str, Any]:
         """
@@ -1960,16 +2131,29 @@ REQUIRED MARKDOWN STRUCTURE:
                 writer.writerow([row.get("created_at"), desc, e_type, "Completed", amt, "Revenue Event", clinic_id])
 
         elif clean_type in ("calls", "heatmap"):
-            writer.writerow(["Call ID", "Direction", "Status", "Outcome", "Call Type", "Started At", "Duration (sec)"])
-            res = supabase_read.table("calls").select("id, direction, status, outcome, call_type, started_at, duration_seconds") \
+            writer.writerow(["Call ID", "Direction", "Status", "Outcome", "Call Type", "Timestamp", "Duration (sec)"])
+            buffer_start = (start_dt - datetime.timedelta(days=1)).isoformat()
+            buffer_end = (end_dt + datetime.timedelta(days=1)).isoformat()
+            res = supabase_read.table("calls").select("id, direction, status, outcome, call_type, started_at, created_at, duration_seconds") \
                 .eq("clinic_id", clinic_id) \
-                .gte("started_at", start_dt.isoformat()) \
-                .lte("started_at", end_dt.isoformat()) \
+                .gte("created_at", buffer_start) \
+                .lte("created_at", buffer_end) \
                 .execute()
             for row in (res.data or []):
+                ts = row.get("started_at") or row.get("created_at")
+                if not ts:
+                    continue
+                try:
+                    dt = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    if not (start_dt <= dt <= end_dt):
+                        continue
+                except Exception:
+                    pass
                 writer.writerow([
                     row.get("id"), row.get("direction"), row.get("status"),
-                    row.get("outcome"), row.get("call_type"), row.get("started_at"),
+                    row.get("outcome"), row.get("call_type"), ts,
                     row.get("duration_seconds")
                 ])
 
