@@ -7,7 +7,7 @@ import {
   TrendingUp, Phone, Users, Calendar, AlertCircle, FileSpreadsheet, 
   Sparkles, CheckCircle2, ChevronRight, Loader2, ArrowUpRight, ArrowDownRight, ShieldAlert,
   HelpCircle, Search, Mail, Calculator, Clock, Activity, DollarSign, Award,
-  Download, Check, SlidersHorizontal, BarChart3, ShieldCheck, Zap
+  Download, Check, SlidersHorizontal, BarChart3, ShieldCheck, Zap, RefreshCw
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -36,6 +36,7 @@ export default function Analytics() {
   const [exporting, setExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [generatingInsights, setGeneratingInsights] = useState(false);
 
   // ROI Interactive Calculator Local State
   const [staffHourlyWage, setStaffHourlyWage] = useState(25); // $20 - $45 / hr
@@ -463,6 +464,20 @@ export default function Analytics() {
       console.error("Failed to update benchmark opt-in", err);
     } finally {
       setTogglingOptIn(false);
+    }
+  };
+
+  const handleRegenerateInsights = async () => {
+    setGeneratingInsights(true);
+    try {
+      const res = await api.post("/analytics/ai-insights/generate");
+      if (res.data?.data) {
+        setSuggestionsData(res.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to regenerate AI insights", err);
+    } finally {
+      setGeneratingInsights(false);
     }
   };
 
@@ -1709,12 +1724,31 @@ export default function Analytics() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-200">
               {/* Executive Ops Report */}
               <div className="card p-6 lg:col-span-2 space-y-4 bg-white border border-[#e7e9dd] relative overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-[#f1f4ed] pb-4">
-                  <Sparkles className="w-5 h-5 text-[#396a00]" />
-                  <div>
-                    <h3 className="text-sm font-extrabold text-on-surface">Weekly Practice Operations Summary</h3>
-                    <p className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Generated autonomously by CMOO AI Assistant</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#f1f4ed] pb-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-[#396a00]" />
+                    <div>
+                      <h3 className="text-sm font-extrabold text-on-surface">Weekly Practice Operations Summary</h3>
+                      <p className="text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">Generated autonomously by CMOO AI Assistant</p>
+                    </div>
                   </div>
+                  <button
+                    onClick={handleRegenerateInsights}
+                    disabled={generatingInsights}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-[#396a00] bg-[#edf7e0] hover:bg-[#e2f0d1] border border-[#d2e7c4] transition disabled:opacity-50 self-start sm:self-auto shrink-0"
+                  >
+                    {generatingInsights ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Analyzing Metrics...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Refresh AI Analysis
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1 select-text">
@@ -1766,7 +1800,9 @@ export default function Analytics() {
                         
                         <button
                           onClick={() => {
-                            if (rec.action_payload?.tab) {
+                            if (rec.action_payload?.route) {
+                              window.location.href = rec.action_payload.route;
+                            } else if (rec.action_payload?.tab) {
                               window.location.href = `/settings?tab=${rec.action_payload.tab}`;
                             } else {
                               window.location.href = `/settings?tab=hours`;

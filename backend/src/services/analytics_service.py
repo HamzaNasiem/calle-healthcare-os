@@ -1565,11 +1565,12 @@ REQUIRED MARKDOWN STRUCTURE:
 
         # Rec 2: Recall Backlog Outreach
         if overdue_recalls_count > 0:
+            patient_plural = f"{overdue_recalls_count} patient{'s have' if overdue_recalls_count != 1 else ' has'}"
             recommendations.append({
                 "id": "rec_recall_pipeline",
                 "type": "opportunity",
-                "title": f"Recall Backlog: {overdue_recalls_count} Overdue Patients",
-                "description": f"{overdue_recalls_count} patients have not visited in >6 months, representing ${potential_recall_revenue:,} in uncaptured revenue. Launch automated voice recall campaign to re-engage.",
+                "title": f"Recall Backlog: {overdue_recalls_count} Overdue Patient{'s' if overdue_recalls_count != 1 else ''}",
+                "description": f"{patient_plural} not visited in >6 months, representing ${potential_recall_revenue:,} in uncaptured revenue. Launch automated voice recall campaign to re-engage.",
                 "action_label": "Launch Recalls",
                 "action_payload": {"route": "/outbound-campaigns"}
             })
@@ -1725,11 +1726,12 @@ REQUIRED MARKDOWN STRUCTURE:
 
         # Rec 2: Recall Backlog
         if overdue_count > 0:
+            patient_plural = f"{overdue_count} patient{'s have' if overdue_count != 1 else ' has'}"
             recommendations.append({
                 "id": "rec_recall_pipeline",
                 "type": "opportunity",
-                "title": f"Recall Backlog: {overdue_count} Overdue Patients",
-                "description": f"{overdue_count} patients have not visited in >6 months. Launch automated voice recall campaign to re-engage patients and fill open schedule slots.",
+                "title": f"Recall Backlog: {overdue_count} Overdue Patient{'s' if overdue_count != 1 else ''}",
+                "description": f"{patient_plural} not visited in >6 months. Launch automated voice recall campaign to re-engage patients and fill open schedule slots.",
                 "action_label": "Launch Recalls",
                 "action_payload": {"route": "/outbound-campaigns"}
             })
