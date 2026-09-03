@@ -212,14 +212,21 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
             if not is_active:
                 return {"success": False, "error": "Your clinic account is currently suspended due to quota exhaustion or expired trial."}
 
-            res = supabase.table("clinics").select("retell_agent_id, twilio_number").eq("id", clinic_id).single().execute()
-            clinic = res.data
+            res = supabase.table("clinics").select("retell_agent_id, twilio_number, telnyx_number, phone_number").eq("id", clinic_id).single().execute()
+            clinic = res.data or {}
             
-            if not clinic or not clinic.get("retell_agent_id"):
+            agent_id = clinic.get("retell_agent_id") or getattr(settings, "RETELL_AGENT_ID", None) or "agent_a1fa755218c552cda6650ea69e"
+            if not agent_id:
                 raise Exception("Clinic does not have a Retell agent configured")
                 
-            from_number = clinic.get("twilio_number", settings.TWILIO_DEFAULT_NUMBER)
-            agent_id = clinic.get("retell_agent_id")
+            from_number = (
+                clinic.get("telnyx_number")
+                or clinic.get("phone_number")
+                or clinic.get("twilio_number")
+                or getattr(settings, "TELNYX_DEFAULT_NUMBER", None)
+                or getattr(settings, "TWILIO_DEFAULT_NUMBER", None)
+                or "+15755734355"
+            )
             
             dynamic_vars = {
                 "patient_name": data.get("patientName", "Valued Patient"),

@@ -899,7 +899,8 @@ const Appointments = () => {
         patient_name: appt.patient_name || "Patient",
         time_str: timeStr,
         clinic_name: clinic?.name || "Medical Clinic",
-        wait_for_completion: false
+        wait_for_completion: false,
+        engine: "instant"
       });
       showToast(`🤖 CALL-E 24h confirmation voice call initiated for ${appt.patient_name || 'Patient'}!`, "success");
     } catch (err) {

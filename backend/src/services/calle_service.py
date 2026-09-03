@@ -279,12 +279,18 @@ class CalleService:
     def _detect_region_and_locale(self, phone: str, region_override: str = "US") -> Tuple[str, str]:
         """Auto-detect region and locale from phone number prefix."""
         clean = (phone or "").strip()
+        if clean.startswith("+92"):
+            return "PK", "en-US"
         if clean.startswith("+44"):
             return "GB", "en-GB"
         if clean.startswith("+91"):
             return "IN", "en-IN"
         if clean.startswith("+61"):
             return "AU", "en-AU"
+        if clean.startswith("+971"):
+            return "AE", "en-US"
+        if clean.startswith("+966"):
+            return "SA", "en-US"
         if clean.startswith("+1"):
             return "US", "en-US"
         return region_override, "en-US"
@@ -399,7 +405,7 @@ class CalleService:
             f"If they cannot attend, politely ask if they would like to reschedule, "
             f"and note their preferred day and time. Be warm, professional, and concise."
         )
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, CONFIRMATION_SCHEMA, idempotency_key, webhook_url, region
@@ -434,7 +440,7 @@ class CalleService:
             return self._mock_noshow(idempotency_key)
 
         task = self._build_noshow_script(patient_name, time_str, clinic_name)
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, NO_SHOW_SCHEMA, idempotency_key, webhook_url, region
@@ -469,7 +475,7 @@ class CalleService:
             f"If yes, inquire about their preferred days of the week and morning or afternoon preference. "
             f"Be friendly, courteous, and non-pushy. If they decline, thank them warmly."
         )
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, RECALL_SCHEMA, idempotency_key, webhook_url, region
@@ -502,7 +508,7 @@ class CalleService:
             f"2) Do you have any suggestions or feedback for our medical staff? "
             f"Thank them warmly for choosing {clinic_name}."
         )
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, SURVEY_SCHEMA, idempotency_key, webhook_url, region
@@ -536,7 +542,7 @@ class CalleService:
             f"Ask if they would like to take this newly opened appointment slot. "
             f"If they decline, ask if they have an alternative preferred day or wish to remain on the waitlist."
         )
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, WAITLIST_SCHEMA, idempotency_key, webhook_url, region
@@ -584,7 +590,7 @@ class CalleService:
             f"When connected to a representative, state the clinic name, provider NPI, member ID, and CPT code clearly. "
             f"Obtain the final status (Approved or Denied) and ask for the Authorization Reference Code if approved."
         )
-        if webhook_url and not wait_for_completion:
+        if not wait_for_completion:
             return await asyncio.to_thread(
                 self._sync_create_fire_and_forget,
                 task, phone, PRIOR_AUTH_SCHEMA, idempotency_key, webhook_url, region

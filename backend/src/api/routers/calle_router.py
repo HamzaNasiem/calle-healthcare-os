@@ -70,6 +70,7 @@ class SingleCallRequest(BaseModel):
     slot_time: Optional[str] = None
     region: str = "US"
     wait_for_completion: bool = False
+    engine: Optional[str] = "auto"  # "auto" | "instant" | "retell" | "calle"
 
 
 class RecallCampaignRequest(BaseModel):
@@ -89,7 +90,7 @@ class WaitlistCampaignRequest(BaseModel):
 def _normalize_phone_e164(raw: Optional[str], default_country: str = "+1") -> str:
     """
     Normalizes any phone number format to standard E.164 (+1XXXXXXXXXX).
-    Handles (555) 123-4567, 5551234567, 15551234567, +15551234567, and international numbers.
+    Handles (555) 123-4567, 5551234567, 15551234567, +15551234567, and international numbers (+92, +44, etc.).
     """
     if not raw:
         return ""
@@ -99,6 +100,11 @@ def _normalize_phone_e164(raw: Optional[str], default_country: str = "+1") -> st
     if not digits:
         return ""
     if has_plus:
+        return f"+{digits}"
+    # Pakistani domestic mobile numbers (e.g. 03001234567 or 0321...)
+    if cleaned.startswith("03") and len(digits) == 11:
+        return f"+92{digits[1:]}"
+    if digits.startswith("92") and len(digits) == 12:
         return f"+{digits}"
     if len(digits) == 10:
         return f"{default_country}{digits}"
@@ -714,9 +720,38 @@ async def trigger_single_call(
     idem_key = _build_idempotency_key(body.campaign_type, clinic_id, appointment_id or str(uuid.uuid4()))
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL and not body.wait_for_completion else None
 
-    # 5. Dispatch the right campaign
+    # 5. Dispatch the right campaign (Instant 1-second Retell SIP vs Autonomous CALL-E)
     result = None
-    if body.campaign_type == "confirmation":
+    if body.engine in ("instant", "retell"):
+        try:
+            from ...services.voice_service import voice_service
+            instant_res = await voice_service.make_outbound_call(
+                clinic_id=clinic_id,
+                phone=normalized_phone,
+                call_type=body.campaign_type,
+                data={
+                    "patientName": patient_name or "Valued Patient",
+                    "patientId": patient_id,
+                    "appointmentId": appointment_id,
+                    "timeStr": time_str or "your scheduled appointment"
+                }
+            )
+            if instant_res.get("success"):
+                instant_cid = instant_res.get("data", {}).get("callId")
+                result = {
+                    "id": instant_cid,
+                    "call_id": instant_cid,
+                    "status": "initiated",
+                    "task_completed": False,
+                    "completion_confidence": {"score": 1.0, "label": "instant"},
+                    "summary": f"⚡ Instant 1-second call dispatched via Retell AI / Telnyx SIP ({instant_cid}).",
+                }
+            else:
+                log.warning("[SingleCall] Instant engine returned error: %s, falling back to CALL-E", instant_res.get("error"))
+        except Exception as e:
+            log.error("[SingleCall] Failed to invoke instant engine: %s", e)
+
+    if result is None and body.campaign_type == "confirmation":
         result = await calle_service.confirmation_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
@@ -726,7 +761,7 @@ async def trigger_single_call(
             region=body.region,
             wait_for_completion=body.wait_for_completion,
         )
-    elif body.campaign_type == "no_show":
+    elif result is None and body.campaign_type == "no_show":
         result = await calle_service.no_show_recovery_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
@@ -737,7 +772,7 @@ async def trigger_single_call(
             region=body.region,
             wait_for_completion=body.wait_for_completion,
         )
-    elif body.campaign_type == "recall":
+    elif result is None and body.campaign_type == "recall":
         result = await calle_service.recall_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
@@ -748,7 +783,7 @@ async def trigger_single_call(
             region=body.region,
             wait_for_completion=body.wait_for_completion,
         )
-    elif body.campaign_type == "survey":
+    elif result is None and body.campaign_type == "survey":
         result = await calle_service.post_visit_survey_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
@@ -757,7 +792,7 @@ async def trigger_single_call(
             region=body.region,
             wait_for_completion=body.wait_for_completion,
         )
-    elif body.campaign_type == "waitlist":
+    elif result is None and body.campaign_type == "waitlist":
         result = await calle_service.waitlist_fill_call(
             phone=normalized_phone,
             clinic_name=clinic_name,
@@ -768,7 +803,7 @@ async def trigger_single_call(
             region=body.region,
             wait_for_completion=body.wait_for_completion,
         )
-    else:
+    elif result is None:
         raise HTTPException(status_code=400, detail=f"Unknown campaign_type: {body.campaign_type}")
 
     # 6. Save to DB with strict appointment_id and patient_id linkages

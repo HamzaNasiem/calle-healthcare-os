@@ -81,7 +81,8 @@ const OutboundCampaigns = () => {
   const [singleRecallDays, setSingleRecallDays] = useState(30);
   const [singleSlotDate, setSingleSlotDate] = useState('Tomorrow');
   const [singleSlotTime, setSingleSlotTime] = useState('10:30 AM');
-  const [singleWaitForResult, setSingleWaitForResult] = useState(true); // Default true for instant live test!
+  const [singleWaitForResult, setSingleWaitForResult] = useState(false); // Non-blocking dispatch for instant 1s phone ringing
+  const [singleEngine, setSingleEngine] = useState('instant'); // 'instant' (1s SIP ring) | 'calle' (autonomous task)
   const [singleSubmitting, setSingleSubmitting] = useState(false);
   const [singleStep, setSingleStep] = useState(1);
   const [singleResult, setSingleResult] = useState(null);
@@ -301,6 +302,7 @@ const OutboundCampaigns = () => {
         slot_date: singleSlotDate,
         slot_time: singleSlotTime,
         wait_for_completion: singleWaitForResult,
+        engine: singleEngine,
       };
 
       const res = await api.post('/calle/calls/single', payload);
@@ -1414,11 +1416,61 @@ const OutboundCampaigns = () => {
                   </div>
                 )}
 
+                {/* Engine Selector: Instant 1s Ring vs CALL-E Agent */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-on-surface">Telephony Dispatch Engine</label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setSingleEngine('instant')}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        singleEngine === 'instant'
+                          ? 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/30'
+                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                          ⚡ Instant Direct Dial
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                          1s Ring
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                        Direct Retell / Telnyx SIP ring. Bell rings on your phone within 1-2 seconds.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSingleEngine('calle')}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        singleEngine === 'calle'
+                          ? 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/30'
+                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                          🤖 CALL-E Agent
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                          Hackathon
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                        Autonomous CALL-E LLM agent with real-time goal planning and structured schema.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/10 flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-on-surface">Live Synchronous Execution</p>
+                    <p className="text-xs font-bold text-on-surface">Wait for Call Completion</p>
                     <p className="text-[11px] text-on-surface-variant">
-                      Wait for caller conversation and display extracted result immediately
+                      Hold browser connection open until caller hangs up (Turn OFF for instant 1s dispatch)
                     </p>
                   </div>
                   <input
