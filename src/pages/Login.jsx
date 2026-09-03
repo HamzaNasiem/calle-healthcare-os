@@ -111,6 +111,10 @@ const Login = () => {
     };
 
     handleHashAuth();
+    // Pre-warm backend immediately on login page mount
+    try {
+      fetch("https://calle-healthcare-os.onrender.com/ping", { mode: "no-cors" }).catch(() => {});
+    } catch {}
   }, [navigate, login]);
 
   const handleLogin = async (e) => {
@@ -118,41 +122,59 @@ const Login = () => {
     setLoading(true);
     setError(null);
 
-    try {
-      const response = await api.post("/auth/login", { email, password });
-      
-      if (response.data.mfaRequired) {
-        setMfaRequired(true);
-        setMfaData(response.data);
-        setLoading(false);
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        if (attempts > 1) {
+          setError(`Connecting to cloud server (attempt ${attempts}/${maxAttempts})... almost ready!`);
+        }
+        const response = await api.post("/auth/login", { email, password });
+        
+        if (response.data.mfaRequired) {
+          setMfaRequired(true);
+          setMfaData(response.data);
+          setLoading(false);
+          return;
+        }
+
+        const token = response.data.token || response.data.access_token;
+        const refreshToken = response.data.refreshToken || response.data.refresh_token;
+        const clinicId = response.data.clinicId || response.data.clinic_id || "d3b07384-d113-46a6-a719-38cf89235d54";
+        const clinicName = response.data.clinicName || response.data.clinic_name || "Sunrise Medical Clinic";
+        const timezone = response.data.timezone || "America/Chicago";
+        const role = response.data.role || "owner";
+        const userEmail = response.data.userEmail || response.data.email || email;
+        const userId = response.data.userId || response.data.id || "demo-user-001";
+
+        login({ token, refreshToken, clinicId, clinicName, timezone, role, email: userEmail, userId, rememberMe });
+        navigate("/");
         return;
+
+      } catch (err) {
+        const isColdStart = !err.response || err.code === "ECONNABORTED" || err.message?.includes("Network Error") || err.message?.includes("timeout");
+        
+        if (isColdStart && attempts < maxAttempts) {
+          setError(`Cloud backend is waking up (Render cold start)... Auto-reconnecting in a moment (Attempt ${attempts} of ${maxAttempts})`);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          continue;
+        }
+
+        if (isColdStart) {
+          setError("Cloud backend is still starting up. Please click Sign In once more in 5 seconds.");
+        } else {
+          setError(
+            err.response?.data?.error ||
+              err.response?.data?.detail ||
+              "Failed to login. Please check credentials.",
+          );
+        }
+        break;
       }
-
-      const token = response.data.token || response.data.access_token;
-      const refreshToken = response.data.refreshToken || response.data.refresh_token;
-      const clinicId = response.data.clinicId || response.data.clinic_id || "d3b07384-d113-46a6-a719-38cf89235d54";
-      const clinicName = response.data.clinicName || response.data.clinic_name || "Sunrise Medical Clinic";
-      const timezone = response.data.timezone || "America/Chicago";
-      const role = response.data.role || "owner";
-      const userEmail = response.data.userEmail || response.data.email || email;
-      const userId = response.data.userId || response.data.id || "demo-user-001";
-
-      login({ token, refreshToken, clinicId, clinicName, timezone, role, email: userEmail, userId, rememberMe });
-      navigate("/");
-
-    } catch (err) {
-      if (!err.response || err.code === "ECONNABORTED" || err.message?.includes("Network Error")) {
-        setError("Backend server is waking up (Render cold start). Please wait 10-15 seconds and click Sign In again.");
-      } else {
-        setError(
-          err.response?.data?.error ||
-            err.response?.data?.detail ||
-            "Failed to login. Please check credentials.",
-        );
-      }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   const handleMfaVerify = async (e) => {

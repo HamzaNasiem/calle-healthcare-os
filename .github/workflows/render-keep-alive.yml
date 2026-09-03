@@ -2,8 +2,8 @@ name: 24/7 Render Backend Keep-Alive Ping
 
 on:
   schedule:
-    # Run every 10 minutes 24/7 (Render free tier sleeps after 15 min of inactivity)
-    - cron: '*/10 * * * *'
+    # Run every 5 minutes 24/7 (Render free tier sleeps after 15 min of inactivity)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -12,16 +12,16 @@ concurrency:
 
 jobs:
   keep-alive:
-    name: Ping Render Health Check
+    name: Ping Render Keep-Alive
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Send HTTP Ping to Render
         run: |
-          TARGET_URL="https://calle-healthcare-os.onrender.com/health"
+          TARGET_URL="https://calle-healthcare-os.onrender.com/ping"
           echo "Sending keep-alive ping to $TARGET_URL at $(date -u)..."
           
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 25 "$TARGET_URL" || echo "000")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "$TARGET_URL" || echo "000")
           echo "Initial response status: $HTTP_STATUS"
           
           if [ "$HTTP_STATUS" -eq 200 ]; then
@@ -29,15 +29,15 @@ jobs:
             exit 0
           fi
           
-          echo "Retrying ping in 10 seconds..."
-          sleep 10
-          RETRY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 35 "$TARGET_URL" || echo "000")
+          echo "Retrying ping in 5 seconds..."
+          sleep 5
+          RETRY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "$TARGET_URL" || echo "000")
           echo "Retry response status: $RETRY_STATUS"
           
           if [ "$RETRY_STATUS" -eq 200 ]; then
             echo "SUCCESS: Render backend woke up successfully!"
             exit 0
           else
-            echo "NOTICE: Status $RETRY_STATUS received (Render may still be booting)."
+            echo "NOTICE: Status $RETRY_STATUS received (Render is waking up)."
             exit 0
           fi

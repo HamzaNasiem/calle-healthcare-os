@@ -13,7 +13,7 @@
     <script>
       // Zero-latency background wake-up pulse for Render cold-start mitigation
       try {
-        fetch("https://calle-healthcare-os.onrender.com/health", { method: "GET", mode: "no-cors" }).catch(function () {});
+        fetch("https://calle-healthcare-os.onrender.com/ping", { method: "GET", mode: "no-cors" }).catch(function () {});
       } catch (e) {}
     </script>
   </head>

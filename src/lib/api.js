@@ -31,7 +31,7 @@ export const clearAuth = () => {
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  timeout: 45000, // 45s default to accommodate cloud cold starts
   headers: {
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true',
@@ -40,6 +40,10 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
+    // Auth login and wake-up routes get extra headroom for Render cold starts
+    if (config.url && (config.url.includes('/auth/login') || config.url.includes('/ping') || config.url.includes('/health'))) {
+      config.timeout = 75000;
+    }
     const token = getToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
