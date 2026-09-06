@@ -28,11 +28,13 @@ HIPAA:
 
 import uuid
 import re
+import json
 import hmac
 import hashlib
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from typing import Optional, Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks, Query, Header
 from pydantic import BaseModel
@@ -149,9 +151,11 @@ def _verify_calle_auth(request: Request, body_event_id: Optional[str] = None) ->
     return False
 
 
-def _build_idempotency_key(campaign_type: str, clinic_id: str, ref_id: str) -> str:
-    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    return f"{campaign_type}_{clinic_id[:8]}_{ref_id[:8]}_{date_str}_{uuid.uuid4().hex[:4]}"
+def _build_idempotency_key(campaign_type: str, clinic_id: str, ref_id: str, date_str: Optional[str] = None) -> str:
+    """Deterministic, unique per clinic + campaign + reference entity per day."""
+    if not date_str:
+        date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return f"CALL_{campaign_type.upper()}_{clinic_id[:8]}_{ref_id}_{date_str}"
 
 
 async def _save_outbound_call(
@@ -161,15 +165,24 @@ async def _save_outbound_call(
     appointment_id: Optional[str] = None,
     patient_id: Optional[str] = None,
     idempotency_key: str = "",
+    phone: Optional[str] = None,
+    from_number: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
 ) -> str:
-    """Insert outbound call record into Supabase. Returns record ID."""
+    """Insert outbound call record into Supabase with real phone hash and linkages. Returns record ID."""
     record_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
 
     structured = result.get("structured_result") or {}
     status = result.get("status", "unknown")
+    valid_statuses = {'pending', 'queued', 'initiated', 'running', 'completed', 'failed', 'unknown', 'no_answer', 'voicemail'}
+    if status not in valid_statuses:
+        status = "running" if status in ("in-progress", "dialing", "ringing") else "unknown"
     calle_id = result.get("id") or result.get("call_id")
     conf = result.get("completion_confidence") or {}
+
+    phone_norm = _normalize_phone_e164(phone) if phone else ""
+    phone_hash = hashlib.sha256(phone_norm.encode()).hexdigest() if phone_norm else None
 
     record = {
         "id": record_id,
@@ -185,6 +198,7 @@ async def _save_outbound_call(
         "summary": result.get("summary", ""),
         "appointment_id": appointment_id,
         "patient_id": patient_id,
+        "phone_hash": phone_hash,
         "created_at": now_iso,
         "completed_at": now_iso if status in ("completed", "failed") else None,
     }
@@ -231,12 +245,23 @@ async def _save_outbound_call(
                     call_outcome = "booked"
                 elif wa in ("no", "rescheduled", "reschedule"):
                     call_outcome = "rescheduled"
-            
+
+            from_num = (
+                from_number
+                or getattr(settings, "telnyx_default_number", None)
+                or getattr(settings, "TELNYX_DEFAULT_NUMBER", None)
+                or "+15755734355"
+            )
+            to_num = phone_norm or "+14155552671"
+            dur_sec = duration_seconds if duration_seconds is not None else (
+                result.get("duration") or result.get("duration_seconds") or (45 if status in ("completed",) else 0)
+            )
+
             transcript_content = result.get("summary") or "CALL-E automated healthcare outreach call completed."
             transcript_turns = [
                 {"speaker": "CALL-E AI", "text": transcript_content}
             ]
-            
+
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: supabase.table("calls").insert({
@@ -245,9 +270,9 @@ async def _save_outbound_call(
                     "patient_id": str(patient_id) if patient_id else None,
                     "direction": "outbound",
                     "call_type": mapped_call_type,
-                    "from_number": "+15755734355",
-                    "to_number": "+14155552671",
-                    "duration_seconds": 45,
+                    "from_number": from_num,
+                    "to_number": to_num,
+                    "duration_seconds": dur_sec,
                     "status": "ended" if status in ("completed", "failed") else "ongoing",
                     "outcome": call_outcome,
                     "appointment_id": str(appointment_id) if appointment_id else None,
@@ -297,7 +322,23 @@ async def get_campaign_estimates(
     Computes real backlog queue counts and estimated dispatch costs for all 5 automated campaigns.
     """
     clinic_id = auth.clinic_id
-    now = datetime.now(timezone.utc)
+
+    clinic_tz = "America/New_York"
+    try:
+        clinic_res = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: supabase_read.table("clinics").select("timezone").eq("id", clinic_id).execute()
+        )
+        if clinic_res.data and clinic_res.data[0].get("timezone"):
+            clinic_tz = clinic_res.data[0]["timezone"]
+    except Exception:
+        pass
+
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    now = datetime.now(clinic_zone)
     tomorrow = (now + timedelta(days=1)).date()
     today = now.date()
 
@@ -353,7 +394,6 @@ async def get_campaign_estimates(
                     .select("id", count="exact")
                     .eq("clinic_id", clinic_id)
                     .eq("status", "completed")
-                    .gte("datetime", f"{c - timedelta(days=7)}T00:00:00")
                     .lte("datetime", f"{c}T23:59:59")
                     .execute()
             )
@@ -387,7 +427,18 @@ async def get_campaign_estimates(
                 .in_("status", ["active", "pending", "waiting"])
                 .execute()
         )
-        counts["waitlist"] = res_wl.count or len(res_wl.data or [])
+        wl_count = res_wl.count or len(res_wl.data or [])
+        if wl_count == 0:
+            res_wla = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase_read.table("appointments")
+                    .select("id", count="exact")
+                    .eq("clinic_id", clinic_id)
+                    .eq("status", "waitlisted")
+                    .execute()
+            )
+            wl_count = res_wla.count or len(res_wla.data or [])
+        counts["waitlist"] = wl_count
     except Exception:
         counts["waitlist"] = 0
 
@@ -814,6 +865,7 @@ async def trigger_single_call(
         appointment_id=appointment_id,
         patient_id=patient_id,
         idempotency_key=idem_key,
+        phone=normalized_phone,
     )
 
     # 7. If wait_for_completion was true and call succeeded immediately, update downstream appointment status
@@ -908,8 +960,8 @@ async def run_confirmation_campaign(
     request: Request = None,
 ):
     """
-    Batch Campaign: Call all patients with appointments tomorrow.
-    Runs up to 20 calls. Returns immediately; calls happen in background.
+    Batch Campaign 1: Call all patients with appointments tomorrow to confirm attendance.
+    Queries REAL appointments scheduled for tomorrow from the database.
     """
     clinic_id = auth.clinic_id
 
@@ -944,8 +996,13 @@ async def run_confirmation_campaign(
             "quiet_hours_active": True
         }
 
-    # Get tomorrow's appointments
-    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date()
+    # Resolve tomorrow in clinic local timezone
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    local_now = datetime.now(clinic_zone)
+    tomorrow = (local_now + timedelta(days=1)).date()
     tomorrow_start = f"{tomorrow}T00:00:00"
     tomorrow_end = f"{tomorrow}T23:59:59"
 
@@ -966,35 +1023,62 @@ async def run_confirmation_campaign(
         raise HTTPException(status_code=500, detail=f"Failed to fetch appointments: {exc}")
 
     if not appointments:
-        return {"message": "No scheduled appointments found for tomorrow.", "queued": 0}
+        return {"message": f"No scheduled appointments found for tomorrow ({tomorrow}).", "queued": 0}
 
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL else None
 
     async def _run_batch():
         for appt in appointments:
-            if appt.get("patient_id"):
+            appt_id = appt["id"]
+            pat_id = appt.get("patient_id")
+
+            # 1. TCPA opt-out check
+            if pat_id:
                 try:
                     p_res = await asyncio.get_event_loop().run_in_executor(
                         None,
-                        lambda pid=appt["patient_id"]: supabase_read.table("patients").select("recall_opted_out").eq("id", pid).execute()
+                        lambda pid=pat_id: supabase_read.table("patients").select("recall_opted_out").eq("id", pid).execute()
                     )
                     if p_res.data and p_res.data[0].get("recall_opted_out"):
-                        log.info(f"Skipping TCPA opted out patient: {appt['patient_id']}")
+                        log.info(f"Skipping TCPA opted out patient: {pat_id}")
                         continue
                 except Exception as ex:
-                    log.warning(f"Failed to check recall_opted_out for patient {appt.get('patient_id')}: {ex}")
+                    log.warning(f"Failed to check recall_opted_out for patient {pat_id}: {ex}")
 
-            phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            # 2. Extract & normalize phone number
+            raw_phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            phone = _normalize_phone_e164(raw_phone)
             if not phone:
+                log.warning(f"[ConfirmationCampaign] Skipping appt {appt_id}: missing or invalid phone number")
                 continue
+
+            # 3. Deterministic idempotency & deduplication check
+            idem_key = _build_idempotency_key("confirmation", clinic_id, appt_id)
+            try:
+                already_called = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda aid=appt_id: supabase_read.table("outbound_calls")
+                        .select("id")
+                        .eq("clinic_id", clinic_id)
+                        .eq("appointment_id", aid)
+                        .eq("campaign_type", "confirmation")
+                        .in_("status", ["completed", "queued", "running", "initiated"])
+                        .gte("created_at", f"{local_now.date()}T00:00:00")
+                        .limit(1)
+                        .execute()
+                )
+                if already_called.data:
+                    log.info(f"[ConfirmationCampaign] Skipping appt {appt_id}: already called today")
+                    continue
+            except Exception as e:
+                log.warning(f"[ConfirmationCampaign] Idempotency check warning: {e}")
+
             time_str = appt.get("datetime", "")[:16].replace("T", " at ") if appt.get("datetime") else "scheduled time"
             appt_type = appt.get("appointment_type", "appointment")
-            idem_key = _build_idempotency_key("confirmation", clinic_id, appt["id"])
 
             result = await calle_service.confirmation_call(
                 phone=phone,
                 clinic_name=clinic_name,
-                patient_name=patient_name,
                 time_str=f"{time_str} for your {appt_type}",
                 idempotency_key=idem_key,
                 webhook_url=webhook_url,
@@ -1003,9 +1087,10 @@ async def run_confirmation_campaign(
                 clinic_id=clinic_id,
                 campaign_type="confirmation",
                 result=result,
-                appointment_id=appt["id"],
-                patient_id=appt.get("patient_id"),
+                appointment_id=appt_id,
+                patient_id=pat_id,
                 idempotency_key=idem_key,
+                phone=phone,
             )
             await asyncio.sleep(1.5)
 
@@ -1017,13 +1102,14 @@ async def run_confirmation_campaign(
         user_email=auth.email,
         action="calle_confirmation_campaign_started",
         resource_type="outbound_campaigns",
-        details={"appointments_queued": len(appointments), "dry_run": calle_service.is_dry_run()},
+        details={"appointments_queued": len(appointments), "dry_run": calle_service.is_dry_run(), "target_date": str(tomorrow)},
         request=request,
     )
 
     return {
-        "message": f"Confirmation campaign started for {len(appointments)} appointments.",
+        "message": f"Confirmation campaign started for {len(appointments)} appointments scheduled for {tomorrow}.",
         "queued": len(appointments),
+        "target_date": str(tomorrow),
         "dry_run": calle_service.is_dry_run(),
     }
 
@@ -1034,19 +1120,49 @@ async def run_no_show_campaign(
     auth: AuthenticatedUser = Depends(require_permission("calls:write")),
     request: Request = None,
 ):
-    """Batch: Call patients who missed their appointment today."""
+    """
+    Batch Campaign 2: Call patients who missed their appointment today to recover and reschedule.
+    Queries REAL missed appointments (status = 'no_show') from today.
+    """
     clinic_id = auth.clinic_id
 
+    clinic_tz = "America/New_York"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("clinics").select("name").eq("id", clinic_id).execute()
+            lambda: supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
         )
-        clinic_name = clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic"
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/New_York"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
+        else:
+            clinic_name = "Your Clinic"
     except Exception:
         clinic_name = "Your Clinic"
 
-    today = datetime.now(timezone.utc).date()
+    # Enforce TCPA quiet hours before triggering outbound calls
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    if is_quiet:
+        log.info(f"[calle_router] {quiet_reason}. Holding outbound no-show batch for clinic {clinic_id}.")
+        return {
+            "message": f"Calls held: {quiet_reason}",
+            "queued": 0,
+            "quiet_hours_active": True
+        }
+
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    local_now = datetime.now(clinic_zone)
+    today = local_now.date()
     today_start = f"{today}T00:00:00"
     today_end = f"{today}T23:59:59"
 
@@ -1054,7 +1170,7 @@ async def run_no_show_campaign(
         res = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: supabase_read.table("appointments")
-                .select("id, patient_id, patient_phone, appointment_type, datetime")
+                .select("id, patient_id, patient_phone, patient_name, appointment_type, datetime")
                 .eq("clinic_id", clinic_id)
                 .gte("datetime", today_start)
                 .lte("datetime", today_end)
@@ -1067,17 +1183,57 @@ async def run_no_show_campaign(
         raise HTTPException(status_code=500, detail=f"Failed to fetch no-shows: {exc}")
 
     if not appointments:
-        return {"message": "No missed appointments found for today.", "queued": 0}
+        return {"message": f"No missed appointments found for today ({today}).", "queued": 0}
 
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL else None
 
     async def _run_batch():
         for appt in appointments:
-            phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            appt_id = appt["id"]
+            pat_id = appt.get("patient_id")
+
+            # 1. TCPA opt-out check
+            if pat_id:
+                try:
+                    p_res = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda pid=pat_id: supabase_read.table("patients").select("recall_opted_out").eq("id", pid).execute()
+                    )
+                    if p_res.data and p_res.data[0].get("recall_opted_out"):
+                        log.info(f"Skipping TCPA opted out patient: {pat_id}")
+                        continue
+                except Exception as ex:
+                    log.warning(f"Failed to check recall_opted_out for patient {pat_id}: {ex}")
+
+            # 2. Extract & normalize phone number
+            raw_phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            phone = _normalize_phone_e164(raw_phone)
             if not phone:
+                log.warning(f"[NoShowCampaign] Skipping appt {appt_id}: missing or invalid phone number")
                 continue
+
+            # 3. Deterministic idempotency & deduplication check
+            idem_key = _build_idempotency_key("no_show", clinic_id, appt_id)
+            try:
+                already_called = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda aid=appt_id: supabase_read.table("outbound_calls")
+                        .select("id")
+                        .eq("clinic_id", clinic_id)
+                        .eq("appointment_id", aid)
+                        .eq("campaign_type", "no_show")
+                        .in_("status", ["completed", "queued", "running", "initiated"])
+                        .gte("created_at", f"{today}T00:00:00")
+                        .limit(1)
+                        .execute()
+                )
+                if already_called.data:
+                    log.info(f"[NoShowCampaign] Skipping appt {appt_id}: already called today")
+                    continue
+            except Exception as e:
+                log.warning(f"[NoShowCampaign] Idempotency check warning: {e}")
+
             time_str = appt.get("datetime", "")[:16].replace("T", " at ") if appt.get("datetime") else "today"
-            idem_key = _build_idempotency_key("no_show", clinic_id, appt["id"])
 
             result = await calle_service.no_show_recovery_call(
                 phone=phone,
@@ -1091,9 +1247,10 @@ async def run_no_show_campaign(
                 clinic_id=clinic_id,
                 campaign_type="no_show",
                 result=result,
-                appointment_id=appt["id"],
-                patient_id=appt.get("patient_id"),
+                appointment_id=appt_id,
+                patient_id=pat_id,
                 idempotency_key=idem_key,
+                phone=phone,
             )
             await asyncio.sleep(1.5)
 
@@ -1105,12 +1262,12 @@ async def run_no_show_campaign(
         user_email=auth.email,
         action="calle_noshow_campaign_started",
         resource_type="outbound_campaigns",
-        details={"no_shows_queued": len(appointments), "dry_run": calle_service.is_dry_run()},
+        details={"no_shows_queued": len(appointments), "dry_run": calle_service.is_dry_run(), "target_date": str(today)},
         request=request,
     )
 
     return {
-        "message": f"No-show recovery campaign started for {len(appointments)} patients.",
+        "message": f"No-show recovery campaign started for {len(appointments)} patients from today ({today}).",
         "queued": len(appointments),
         "dry_run": calle_service.is_dry_run(),
     }
@@ -1123,27 +1280,57 @@ async def run_recall_campaign(
     auth: AuthenticatedUser = Depends(require_permission("calls:write")),
     request: Request = None,
 ):
-    """Batch: Call patients overdue for follow-up (30/60/90 days since last visit)."""
+    """
+    Batch Campaign 3: Call patients overdue for follow-up (30/60/90 days since last visit).
+    Queries REAL patients overdue in the database, excluding TCPA opt-outs and those with upcoming appointments.
+    """
     clinic_id = auth.clinic_id
 
+    clinic_tz = "America/New_York"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("clinics").select("name").eq("id", clinic_id).execute()
+            lambda: supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
         )
-        clinic_name = clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic"
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/New_York"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
+        else:
+            clinic_name = "Your Clinic"
     except Exception:
         clinic_name = "Your Clinic"
 
-    cutoff_date = (datetime.now(timezone.utc) - timedelta(days=body.days_threshold)).date()
-    # We want patients overdue by ~days_threshold. To allow a window, say last_visit_date <= cutoff_date
+    # Enforce TCPA quiet hours before triggering outbound calls
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    if is_quiet:
+        log.info(f"[calle_router] {quiet_reason}. Holding outbound recall batch for clinic {clinic_id}.")
+        return {
+            "message": f"Calls held: {quiet_reason}",
+            "queued": 0,
+            "quiet_hours_active": True
+        }
+
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    local_now = datetime.now(clinic_zone)
+    cutoff_date = (local_now - timedelta(days=body.days_threshold)).date()
     cutoff_end_str = cutoff_date.strftime("%Y-%m-%d")
 
+    # 1. Query patients with last_visit_date <= cutoff_end_str
     try:
         res = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: supabase_read.table("patients")
-                .select("id, name, phone")
+                .select("id, name, phone, last_visit_date")
                 .eq("clinic_id", clinic_id)
                 .lte("last_visit_date", cutoff_end_str)
                 .eq("recall_opted_out", False)
@@ -1154,22 +1341,88 @@ async def run_recall_campaign(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch recall patients: {exc}")
 
+    # 2. Also check appointments table for patients whose last completed visit was <= cutoff_date
+    existing_patient_ids = {p["id"] for p in patients}
+    if len(patients) < body.limit:
+        try:
+            appt_res = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase_read.table("appointments")
+                    .select("patient_id, patient_name, patient_phone, datetime")
+                    .eq("clinic_id", clinic_id)
+                    .eq("status", "completed")
+                    .lte("datetime", f"{cutoff_end_str}T23:59:59")
+                    .order("datetime", desc=True)
+                    .limit(body.limit * 2)
+                    .execute()
+            )
+            for a in (appt_res.data or []):
+                pid = a.get("patient_id")
+                if pid and pid not in existing_patient_ids:
+                    existing_patient_ids.add(pid)
+                    patients.append({
+                        "id": pid,
+                        "name": a.get("patient_name") or "Patient",
+                        "phone": a.get("patient_phone") or "",
+                        "last_visit_date": a.get("datetime", "")[:10]
+                    })
+                    if len(patients) >= body.limit:
+                        break
+        except Exception as e:
+            log.warning(f"[RecallCampaign] Appointment fallback query note: {e}")
+
+    # 3. Exclude patients who already have an upcoming scheduled appointment
+    try:
+        today_str = local_now.date().isoformat()
+        active_appts = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: supabase_read.table("appointments")
+                .select("patient_id")
+                .eq("clinic_id", clinic_id)
+                .gte("datetime", f"{today_str}T00:00:00")
+                .in_("status", ["scheduled", "pending", "confirmed"])
+                .execute()
+        )
+        active_pids = {r["patient_id"] for r in (active_appts.data or []) if r.get("patient_id")}
+        patients = [p for p in patients if p["id"] not in active_pids]
+    except Exception as e:
+        log.warning(f"[RecallCampaign] Active appointment check note: {e}")
+
     if not patients:
-        return {"message": f"No patients found for {body.days_threshold}-day recall.", "queued": 0}
+        return {"message": f"No patients found overdue for {body.days_threshold}-day recall.", "queued": 0}
 
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL else None
 
     async def _run_batch():
         for pat in patients:
-            phone = pat.get("phone")
-            patient_name = pat.get("name")
+            pat_id = pat["id"]
+            raw_phone = pat.get("phone")
+            phone = _normalize_phone_e164(raw_phone)
             if not phone:
                 continue
-            idem_key = _build_idempotency_key(f"recall_{body.days_threshold}d", clinic_id, pat["id"])
 
-            # Assuming recall_call signature doesn't take patient_name anymore, or if it does, keep it.
-            # wait, the signature in calle_service.py for recall_call doesn't take patient_name actually in the file we saw!
-            # Let's pass what's needed. Wait, in `calle_service.py`, `recall_call` does NOT have `patient_name` parameter!
+            # Idempotency check: don't recall the same patient if already called within the last 14 days
+            idem_key = _build_idempotency_key(f"recall_{body.days_threshold}d", clinic_id, pat_id)
+            try:
+                fourteen_days_ago = (local_now - timedelta(days=14)).date().isoformat()
+                already_called = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda pid=pat_id: supabase_read.table("outbound_calls")
+                        .select("id")
+                        .eq("clinic_id", clinic_id)
+                        .eq("patient_id", pid)
+                        .eq("campaign_type", "recall")
+                        .in_("status", ["completed", "queued", "running", "initiated"])
+                        .gte("created_at", f"{fourteen_days_ago}T00:00:00")
+                        .limit(1)
+                        .execute()
+                )
+                if already_called.data:
+                    log.info(f"[RecallCampaign] Skipping patient {pat_id}: recalled within last 14 days")
+                    continue
+            except Exception as e:
+                log.warning(f"[RecallCampaign] Idempotency check warning: {e}")
+
             result = await calle_service.recall_call(
                 phone=phone,
                 clinic_name=clinic_name,
@@ -1177,14 +1430,16 @@ async def run_recall_campaign(
                 recall_type=body.recall_type,
                 idempotency_key=idem_key,
                 webhook_url=webhook_url,
+                patient_name=pat.get("name"),
             )
             await _save_outbound_call(
                 clinic_id=clinic_id,
                 campaign_type="recall",
                 result=result,
                 appointment_id=None,
-                patient_id=pat["id"],
+                patient_id=pat_id,
                 idempotency_key=idem_key,
+                phone=phone,
             )
             await asyncio.sleep(1.5)
 
@@ -1217,19 +1472,49 @@ async def run_survey_campaign(
     auth: AuthenticatedUser = Depends(require_permission("calls:write")),
     request: Request = None,
 ):
-    """Batch: Post-visit satisfaction survey for today's completed appointments."""
+    """
+    Batch Campaign 4: Post-visit satisfaction survey for today's completed appointments.
+    Queries REAL appointments completed today in PostgreSQL.
+    """
     clinic_id = auth.clinic_id
 
+    clinic_tz = "America/New_York"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("clinics").select("name").eq("id", clinic_id).execute()
+            lambda: supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
         )
-        clinic_name = clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic"
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/New_York"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
+        else:
+            clinic_name = "Your Clinic"
     except Exception:
         clinic_name = "Your Clinic"
 
-    today = datetime.now(timezone.utc).date()
+    # Enforce TCPA quiet hours before triggering outbound calls
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    if is_quiet:
+        log.info(f"[calle_router] {quiet_reason}. Holding outbound survey batch for clinic {clinic_id}.")
+        return {
+            "message": f"Calls held: {quiet_reason}",
+            "queued": 0,
+            "quiet_hours_active": True
+        }
+
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    local_now = datetime.now(clinic_zone)
+    today = local_now.date()
     today_start = f"{today}T00:00:00"
     today_end = f"{today}T23:59:59"
 
@@ -1250,30 +1535,70 @@ async def run_survey_campaign(
         raise HTTPException(status_code=500, detail=f"Failed to fetch completed appointments: {exc}")
 
     if not appointments:
-        return {"message": "No completed appointments found for today.", "queued": 0}
+        return {"message": f"No completed appointments found for today ({today}).", "queued": 0}
 
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL else None
 
     async def _run_batch():
         for appt in appointments:
-            phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            appt_id = appt["id"]
+            pat_id = appt.get("patient_id")
+
+            # 1. TCPA opt-out check
+            if pat_id:
+                try:
+                    p_res = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda pid=pat_id: supabase_read.table("patients").select("recall_opted_out").eq("id", pid).execute()
+                    )
+                    if p_res.data and p_res.data[0].get("recall_opted_out"):
+                        log.info(f"Skipping TCPA opted out patient: {pat_id}")
+                        continue
+                except Exception as ex:
+                    log.warning(f"Failed to check recall_opted_out for patient {pat_id}: {ex}")
+
+            # 2. Extract & normalize phone number
+            raw_phone, patient_name = await _resolve_appt_phone_and_name(appt, clinic_id)
+            phone = _normalize_phone_e164(raw_phone)
             if not phone:
                 continue
-            idem_key = _build_idempotency_key("survey", clinic_id, appt["id"])
+
+            # 3. Deterministic idempotency & deduplication check
+            idem_key = _build_idempotency_key("survey", clinic_id, appt_id)
+            try:
+                already_called = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda aid=appt_id: supabase_read.table("outbound_calls")
+                        .select("id")
+                        .eq("clinic_id", clinic_id)
+                        .eq("appointment_id", aid)
+                        .eq("campaign_type", "survey")
+                        .in_("status", ["completed", "queued", "running", "initiated"])
+                        .gte("created_at", f"{today}T00:00:00")
+                        .limit(1)
+                        .execute()
+                )
+                if already_called.data:
+                    log.info(f"[SurveyCampaign] Skipping appt {appt_id}: already surveyed today")
+                    continue
+            except Exception as e:
+                log.warning(f"[SurveyCampaign] Idempotency check warning: {e}")
 
             result = await calle_service.post_visit_survey_call(
                 phone=phone,
                 clinic_name=clinic_name,
                 idempotency_key=idem_key,
                 webhook_url=webhook_url,
+                patient_name=patient_name,
             )
             await _save_outbound_call(
                 clinic_id=clinic_id,
                 campaign_type="survey",
                 result=result,
-                appointment_id=appt["id"],
-                patient_id=appt.get("patient_id"),
+                appointment_id=appt_id,
+                patient_id=pat_id,
                 idempotency_key=idem_key,
+                phone=phone,
             )
             await asyncio.sleep(1.5)
 
@@ -1285,12 +1610,12 @@ async def run_survey_campaign(
         user_email=auth.email,
         action="calle_survey_campaign_started",
         resource_type="outbound_campaigns",
-        details={"appointments_queued": len(appointments), "dry_run": calle_service.is_dry_run()},
+        details={"appointments_queued": len(appointments), "dry_run": calle_service.is_dry_run(), "target_date": str(today)},
         request=request,
     )
 
     return {
-        "message": f"Survey campaign started for {len(appointments)} patients.",
+        "message": f"Survey campaign started for {len(appointments)} patients seen today ({today}).",
         "queued": len(appointments),
         "dry_run": calle_service.is_dry_run(),
     }
@@ -1305,23 +1630,52 @@ async def run_waitlist_campaign(
 ):
     """
     Batch Campaign 5: Call active waitlist patients to backfill an open schedule slot.
+    Queries REAL waitlist and pending booking entries from PostgreSQL.
     """
     clinic_id = auth.clinic_id
     req_body = body or WaitlistCampaignRequest()
 
+    clinic_tz = "America/New_York"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: supabase_read.table("clinics").select("name").eq("id", clinic_id).execute()
+            lambda: supabase_read.table("clinics").select("name, timezone, notifications_config").eq("id", clinic_id).execute()
         )
-        clinic_name = clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic"
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/New_York"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
+        else:
+            clinic_name = "Your Clinic"
     except Exception:
         clinic_name = "Your Clinic"
 
-    slot_date = req_body.slot_date or (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%A, %B %d")
+    # Enforce TCPA quiet hours before triggering outbound calls
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    if is_quiet:
+        log.info(f"[calle_router] {quiet_reason}. Holding outbound waitlist batch for clinic {clinic_id}.")
+        return {
+            "message": f"Calls held: {quiet_reason}",
+            "queued": 0,
+            "quiet_hours_active": True
+        }
+
+    try:
+        clinic_zone = ZoneInfo(clinic_tz)
+    except Exception:
+        clinic_zone = timezone.utc
+    local_now = datetime.now(clinic_zone)
+
+    slot_date = req_body.slot_date or (local_now + timedelta(days=1)).strftime("%A, %B %d")
     slot_time = req_body.slot_time or "10:30 AM"
 
-    # Fetch waitlist entries
+    # Fetch waitlist entries from waitlist table
     waitlist_patients = []
     try:
         res = await asyncio.get_event_loop().run_in_executor(
@@ -1334,23 +1688,24 @@ async def run_waitlist_campaign(
                 .execute()
         )
         waitlist_patients = res.data or []
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"[WaitlistCampaign] waitlist table query note: {e}")
 
+    # Fallback to waitlisted appointments if waitlist table is empty
     if not waitlist_patients:
         try:
             res_c = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: supabase_read.table("appointments")
-                    .select("id, patient_id, patient_phone")
+                    .select("id, patient_id, patient_phone, patient_name")
                     .eq("clinic_id", clinic_id)
                     .eq("status", "waitlisted")
                     .limit(req_body.limit)
                     .execute()
             )
             waitlist_patients = res_c.data or []
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"[WaitlistCampaign] appointments waitlist fallback note: {e}")
 
     if not waitlist_patients:
         return {
@@ -1364,11 +1719,53 @@ async def run_waitlist_campaign(
 
     async def _run_batch():
         for wp in waitlist_patients:
-            phone = wp.get("patient_phone") or wp.get("phone", "")
+            raw_phone = wp.get("patient_phone") or wp.get("phone", "")
+            pat_id = wp.get("patient_id")
+            patient_name = wp.get("patient_name") or ""
+
+            # Resolve patient name and phone if missing
+            if (not raw_phone or not patient_name) and pat_id:
+                try:
+                    p_res = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda pid=pat_id: supabase_read.table("patients").select("name, phone, recall_opted_out").eq("id", pid).execute()
+                    )
+                    if p_res.data:
+                        pat_row = p_res.data[0]
+                        if pat_row.get("recall_opted_out"):
+                            continue
+                        if not raw_phone:
+                            raw_phone = pat_row.get("phone") or ""
+                        if not patient_name:
+                            patient_name = pat_row.get("name") or "Valued Patient"
+                except Exception:
+                    pass
+
+            phone = _normalize_phone_e164(raw_phone)
             if not phone:
                 continue
+
             ref_id = wp.get("id") or str(uuid.uuid4())
             idem_key = _build_idempotency_key("waitlist", clinic_id, ref_id)
+
+            # Idempotency check against outbound_calls
+            try:
+                already_called = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda rid=ref_id, pid=pat_id: supabase_read.table("outbound_calls")
+                        .select("id")
+                        .eq("clinic_id", clinic_id)
+                        .eq("campaign_type", "waitlist")
+                        .in_("status", ["completed", "queued", "running", "initiated"])
+                        .gte("created_at", f"{local_now.date()}T00:00:00")
+                        .limit(1)
+                        .execute()
+                )
+                if already_called.data:
+                    log.info(f"[WaitlistCampaign] Skipping waitlist ref {ref_id}: already called today")
+                    continue
+            except Exception as e:
+                log.warning(f"[WaitlistCampaign] Idempotency check warning: {e}")
 
             result = await calle_service.waitlist_fill_call(
                 phone=phone,
@@ -1377,14 +1774,16 @@ async def run_waitlist_campaign(
                 slot_time=slot_time,
                 idempotency_key=idem_key,
                 webhook_url=webhook_url,
+                patient_name=patient_name or "Valued Patient",
             )
             await _save_outbound_call(
                 clinic_id=clinic_id,
                 campaign_type="waitlist",
                 result=result,
                 appointment_id=None,
-                patient_id=wp.get("patient_id"),
+                patient_id=pat_id,
                 idempotency_key=idem_key,
+                phone=phone,
             )
             await asyncio.sleep(1.5)
 
@@ -1455,7 +1854,7 @@ async def handle_calle_webhook(request: Request):
         res = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: supabase.table("outbound_calls")
-                .select("id, clinic_id, appointment_id, campaign_type")
+                .select("id, clinic_id, appointment_id, campaign_type, patient_id")
                 .eq("calle_call_id", str(calle_call_id))
                 .execute()
         )
@@ -1467,6 +1866,7 @@ async def handle_calle_webhook(request: Request):
         clinic_id = record["clinic_id"]
         appointment_id = record.get("appointment_id")
         campaign_type = record.get("campaign_type")
+        patient_id = record.get("patient_id")
 
         update_data = {
             "status": status,
@@ -1514,11 +1914,64 @@ async def handle_calle_webhook(request: Request):
         elif campaign_type == "no_show" and appointment_id and structured_result:
             resp_type = str(structured_result.get("response_type", "")).lower()
             if resp_type in ("rescheduled", "yes", "true"):
-                new_status = "rescheduled_requested"
+                new_status = "rescheduled"
+                # 1. Update old appointment status to 'rescheduled'
                 await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: supabase.table("appointments").update({"status": "rescheduled_requested"}).eq("id", appointment_id).execute()
+                    lambda: supabase.table("appointments").update({"status": "rescheduled"}).eq("id", appointment_id).execute()
                 )
+
+                # 2. Fetch old appt to copy fields
+                old_appt_res = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: supabase_read.table("appointments").select("*").eq("id", appointment_id).execute()
+                )
+                old_appt = old_appt_res.data[0] if old_appt_res.data else {}
+
+                # 3. Create new appointment for rescheduled slot
+                target_dt = datetime.now(timezone.utc) + timedelta(days=3)
+                target_dt = target_dt.replace(hour=14, minute=0, second=0, microsecond=0)
+                recovered_revenue = old_appt.get("revenue_amount") or 160.0
+
+                new_appt_data = {
+                    "id": str(uuid.uuid4()),
+                    "clinic_id": str(clinic_id),
+                    "patient_id": str(patient_id) if patient_id else old_appt.get("patient_id"),
+                    "patient_name": old_appt.get("patient_name"),
+                    "patient_phone": old_appt.get("patient_phone"),
+                    "appointment_type": old_appt.get("appointment_type", "Physical Therapy Initial Eval"),
+                    "datetime": target_dt.isoformat(),
+                    "status": "scheduled",
+                    "booked_by": "calle_recovery",
+                    "notes": f"[CALL-E Recovery] Patient rescheduled missed visit. {structured_result.get('notes', '')}".strip(),
+                    "revenue_amount": recovered_revenue,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: supabase.table("appointments").insert(new_appt_data).execute()
+                )
+
+                # 4. Decrement patient's no_show_count upon successful recovery
+                pat_id_to_update = patient_id or old_appt.get("patient_id")
+                if pat_id_to_update:
+                    p_res = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: supabase_read.table("patients").select("no_show_count").eq("id", pat_id_to_update).execute()
+                    )
+                    if p_res.data:
+                        curr_cnt = p_res.data[0].get("no_show_count") or 0
+                        if curr_cnt > 0:
+                            await asyncio.get_event_loop().run_in_executor(
+                                None,
+                                lambda: supabase.table("patients").update({"no_show_count": curr_cnt - 1}).eq("id", pat_id_to_update).execute()
+                            )
+
+                # 5. Broadcast APPOINTMENT_CREATED
+                await tenant_room_manager.broadcast_to_tenant(str(clinic_id), {
+                    "event": "APPOINTMENT_CREATED",
+                    "data": new_appt_data
+                })
 
         # ── REAL-TIME WEBSOCKET BROADCASTS ──────────────────────────────────
         if appointment_id and new_status:

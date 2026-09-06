@@ -903,6 +903,15 @@ const Appointments = () => {
         engine: "instant"
       });
       showToast(`🤖 CALL-E 24h confirmation voice call initiated for ${appt.patient_name || 'Patient'}!`, "success");
+      setTimeout(async () => {
+        try {
+          const res = await api.get(`/calls?appointment_id=${appt.id}&limit=1`);
+          const freshCalls = res.data?.data || [];
+          if (freshCalls.length > 0) {
+            setApptCall(freshCalls[0]);
+          }
+        } catch (_) {}
+      }, 1200);
     } catch (err) {
       console.error("Failed to initiate confirmation call:", err);
       const errMsg = err.response?.data?.detail || err.message || "Failed to initiate confirmation call.";
@@ -930,7 +939,7 @@ const Appointments = () => {
       const res = await api.get(`/calls?appointment_id=${apt.id}&limit=1`);
       const calls = res.data.data || [];
       if (calls.length === 0 && apt.patient_phone) {
-        const res2 = await api.get(`/calls?from_number=${encodeURIComponent(apt.patient_phone)}&limit=5`);
+        const res2 = await api.get(`/calls?search=${encodeURIComponent(apt.patient_phone)}&limit=5`);
         const calls2 = res2.data.data || [];
         setApptCall(calls2[0] || null);
       } else {

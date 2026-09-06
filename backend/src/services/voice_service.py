@@ -18,6 +18,8 @@ AUDIT DATE: 2026-08-16 — Identified in 5-agent comprehensive code audit.
 """
 import json
 import datetime
+import logging
+import re
 from typing import Dict, Any, Optional
 from ..core.config import settings
 from ..core.database import supabase
@@ -26,6 +28,31 @@ from .calendar_service import calendar_service
 from .revenue_service import revenue_service
 from .sms_service import sms_service
 from .connectors.voice_provider_factory import VoiceProviderFactory
+
+log = logging.getLogger(__name__)
+
+
+class PHIScrubberFilter(logging.Filter):
+    """HIPAA: Redact E.164 phone patterns from all log messages in this module."""
+    _PHONE_RE = re.compile(r"\+?[\d\s\-\(\)]{10,17}")
+
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            record.msg = self._PHONE_RE.sub("[PHI_REDACTED]", record.msg)
+        if record.args:
+            try:
+                cleaned = []
+                for a in (record.args if isinstance(record.args, tuple) else (record.args,)):
+                    if isinstance(a, str):
+                        a = self._PHONE_RE.sub("[PHI_REDACTED]", a)
+                    cleaned.append(a)
+                record.args = tuple(cleaned)
+            except Exception:
+                pass
+        return True
+
+
+log.addFilter(PHIScrubberFilter())
 
 
 class VoiceService:
@@ -57,7 +84,7 @@ class VoiceService:
             
             return {"success": True, "data": {"agentId": agent_id}}
         except Exception as e:
-            print(f"[voice.create_agent] Error: {str(e)}")
+            log.error("[voice.create_agent] Error: %s", str(e))
             return {"success": False, "error": str(e)}
 
     async def update_agent_prompt(self, clinic_id: str) -> Dict[str, Any]:
@@ -86,7 +113,7 @@ class VoiceService:
             
             return {"success": True, "data": {"agentId": agent_id}}
         except Exception as e:
-            print(f"[voice.update_agent_prompt] Error: {str(e)}")
+            log.error("[voice.update_agent_prompt] Error: %s", str(e))
             return {"success": False, "error": str(e)}
 
     def build_agent_prompt(self, clinic: dict) -> str:
@@ -260,7 +287,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
             
             return {"success": True, "data": {"callId": call_id}}
         except Exception as e:
-            print(f"[voice.make_outbound_call] Error: {str(e)}")
+            log.error("[voice.make_outbound_call] Error: %s", str(e))
             return {"success": False, "error": str(e)}
 
     async def handle_call_event(self, event: dict) -> Dict[str, Any]:
@@ -293,7 +320,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                     if agent_res.data:
                         clinic_id = agent_res.data[0]["id"]
                 except Exception as agent_res_err:
-                    print(f"[voice.handle_call_event] Agent lookup error: {str(agent_res_err)}")
+                    log.error("[voice.handle_call_event] Agent lookup error: %s", str(agent_res_err))
             
             # Fallback to phone number checks if agent_id resolution failed
             if not clinic_id:
@@ -309,7 +336,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                             if clinic_res.data:
                                 clinic_id = clinic_res.data[0]["id"]
                     except Exception as phone_res_err:
-                        print(f"[voice.handle_call_event] Phone lookup error: {str(phone_res_err)}")
+                        log.error("[voice.handle_call_event] Phone lookup error: %s", str(phone_res_err))
             
             # Secondary fallback: Resolve from historical call record if webhook payload lacks detail (outbound campaigns)
             if not clinic_id and call_id:
@@ -319,7 +346,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                         clinic_id = call_record.data[0]["clinic_id"]
                         patient_id = call_record.data[0].get("patient_id")
                 except Exception as call_rec_err:
-                    print(f"[voice.handle_call_event] Historical call resolution error: {str(call_rec_err)}")
+                    log.error("[voice.handle_call_event] Historical call resolution error: %s", str(call_rec_err))
                     
             if not clinic_id:
                 raise Exception(f"No clinic found for agent: {agent_id}, numbers: {to_number}/{from_number}, and call {call_id}")
@@ -330,11 +357,11 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                 if clinic_active_res.data and not clinic_active_res.data.get("is_active", True):
                     # Only stop call if it is live
                     if call_status not in ["ended", "completed", "analyzed"]:
-                        print(f"[voice.handle_call_event] Clinic {clinic_id} is suspended/inactive. Terminating live call {call_id} immediately.")
+                        log.warning("[voice.handle_call_event] Clinic %s is suspended/inactive. Terminating live call %s immediately.", clinic_id, call_id)
                         try:
                             await self.provider.stop_call(call_id)
                         except Exception as stop_err:
-                            print(f"[voice.handle_call_event] Failed to invoke stop_call: {stop_err}")
+                            log.error("[voice.handle_call_event] Failed to invoke stop_call: %s", str(stop_err))
                             
                         # Update/insert call record in DB
                         call_payload = {
@@ -353,11 +380,11 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                                 call_payload["to_number"] = to_number
                                 supabase.table("calls").insert(call_payload).execute()
                         except Exception as db_err:
-                            print(f"[voice.handle_call_event] Failed to log failed call: {db_err}")
+                            log.error("[voice.handle_call_event] Failed to log failed call: %s", str(db_err))
                             
                     return {"success": False, "error": "Clinic account is suspended/inactive."}
             except Exception as active_err:
-                print(f"[voice.handle_call_event] Error verifying clinic active state: {active_err}")
+                log.error("[voice.handle_call_event] Error verifying clinic active state: %s", str(active_err))
             
             # 2. Resolve Patient if not already resolved
             patient_phone = from_number if event.get("direction") == "inbound" else to_number
@@ -371,7 +398,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                 clinic_data_res = supabase.table("clinics").select("timezone, monthly_revenue_per_visit, name").eq("id", clinic_id).single().execute()
                 clinic_data = clinic_data_res.data if clinic_data_res else None
             except Exception as clinic_fetch_err:
-                print(f"[voice.handle_call_event] Clinic fetch error: {str(clinic_fetch_err)}")
+                log.error("[voice.handle_call_event] Clinic fetch error: %s", str(clinic_fetch_err))
                 
             clinic_tz = "America/Chicago"
             if clinic_data and isinstance(clinic_data, dict):
@@ -416,7 +443,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                 except Exception as insert_err:
                     err_msg = str(insert_err)
                     if "duplicate key" in err_msg.lower() or "23505" in err_msg:
-                        print(f"[voice.handle_call_event] Duplicate call key detected for {call_id}, falling back to update.")
+                        log.info("[voice.handle_call_event] Duplicate call key detected for %s, falling back to update.", call_id)
                         supabase.table("calls").update(update_data).eq("retell_call_id", call_id).execute()
                     else:
                         raise insert_err
@@ -425,7 +452,7 @@ IMPORTANT: Speak like a real human. Keep every response under 15-20 words. Avoid
                 from ..core.cache import invalidate_dashboard_stats
                 invalidate_dashboard_stats(clinic_id)
             except Exception as cache_e:
-                print(f"[voice.handle_call_event] Cache invalidation warning: {cache_e}")
+                log.warning("[voice.handle_call_event] Cache invalidation warning: %s", str(cache_e))
                 
             if record_only or not transcript_text or call_status not in ["ended", "completed", "analyzed"]:
                 return {"success": True, "data": {"action": "recorded"}}
@@ -473,7 +500,7 @@ Extract intent. Return ONLY JSON format:
                     naive_dt = datetime.datetime.strptime(f"{intent_data['date']}T{intent_data['time']}:00", "%Y-%m-%dT%H:%M:%S")
                     appt_dt = naive_dt.replace(tzinfo=tz)
                 except Exception as tz_err:
-                    print(f"[voice.handle_call_event] Timezone error on booking: {str(tz_err)}, falling back to naive UTC")
+                    log.warning("[voice.handle_call_event] Timezone error on booking: %s, falling back to naive UTC", str(tz_err))
                     appt_dt = datetime.datetime.strptime(f"{intent_data['date']}T{intent_data['time']}:00", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
                 
                 # Resolve appointment type, duration, fee, and CPT dynamically from clinic settings
@@ -609,9 +636,9 @@ Extract intent. Return ONLY JSON format:
                             patient_id=patient_id
                         )
                     else:
-                        print(f"[voice.handle_call_event] Booking confirmation SMS disabled for clinic {clinic_id}. Skipping.")
+                        log.info("[voice.handle_call_event] Booking confirmation SMS disabled for clinic %s. Skipping.", clinic_id)
                 except Exception as sms_err:
-                    print(f"[voice.handle_call_event] Booking SMS confirmation error: {str(sms_err)}")
+                    log.error("[voice.handle_call_event] Booking SMS confirmation error: %s", str(sms_err))
                 
             elif action == "reschedule" and patient_id and intent_data.get("date") and intent_data.get("time"):
                 # Find latest active appointment for this patient
@@ -627,7 +654,7 @@ Extract intent. Return ONLY JSON format:
                         naive_dt = datetime.datetime.strptime(f"{intent_data['date']}T{intent_data['time']}:00", "%Y-%m-%dT%H:%M:%S")
                         appt_dt = naive_dt.replace(tzinfo=tz)
                     except Exception as tz_err:
-                        print(f"[voice.handle_call_event] Timezone error on rescheduling: {str(tz_err)}, falling back to naive UTC")
+                        log.warning("[voice.handle_call_event] Timezone error on rescheduling: %s, falling back to naive UTC", str(tz_err))
                         appt_dt = datetime.datetime.strptime(f"{intent_data['date']}T{intent_data['time']}:00", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
                     
                     # Update Google Calendar
@@ -647,7 +674,7 @@ Extract intent. Return ONLY JSON format:
                             if new_cal_res.get("success") and new_cal_res.get("data"):
                                 new_event_id = new_cal_res["data"]["googleEventId"]
                         except Exception as cal_err:
-                            print(f"[voice.handle_call_event] Reschedule calendar error: {str(cal_err)}")
+                            log.error("[voice.handle_call_event] Reschedule calendar error: %s", str(cal_err))
                         
                     # Update database appointment
                     update_payload = {
@@ -684,7 +711,7 @@ Extract intent. Return ONLY JSON format:
                                     patient_id=patient_id
                                 )
                     except Exception as sms_err:
-                        print(f"[voice.handle_call_event] Reschedule SMS confirmation error: {str(sms_err)}")
+                        log.error("[voice.handle_call_event] Reschedule SMS confirmation error: %s", str(sms_err))
                     
             elif action == "cancel" and patient_id:
                 # Find latest active appointment for this patient
@@ -699,7 +726,7 @@ Extract intent. Return ONLY JSON format:
                         try:
                             await calendar_service.cancel_event(clinic_id, appt["google_event_id"])
                         except Exception as cal_err:
-                            print(f"[voice.handle_call_event] Cancel calendar error: {str(cal_err)}")
+                            log.error("[voice.handle_call_event] Cancel calendar error: %s", str(cal_err))
                             
                     # Update database appointment to cancelled
                     supabase.table("appointments").update({"status": "cancelled"}).eq("id", appt_id).execute()
@@ -734,7 +761,7 @@ Extract intent. Return ONLY JSON format:
                                     patient_id=patient_id
                                 )
                     except Exception as sms_err:
-                        print(f"[voice.handle_call_event] Cancel SMS confirmation error: {str(sms_err)}")
+                        log.error("[voice.handle_call_event] Cancel SMS confirmation error: %s", str(sms_err))
                     
             # Update Call Outcome
             if call_id:
@@ -798,11 +825,11 @@ Extract intent. Return ONLY JSON format:
                         resource_id=call_id
                     )
                 except Exception as notif_err:
-                    print(f"[voice.handle_call_event] Failed to trigger notification: {notif_err}")
+                    log.error("[voice.handle_call_event] Failed to trigger notification: %s", str(notif_err))
             
             return {"success": True, "data": {"action": action, "appointmentId": appt_id, "clinicId": clinic_id}}
         except Exception as e:
-            print(f"[voice.handle_call_event] Error: {str(e)}")
+            log.error("[voice.handle_call_event] Error: %s", str(e))
             return {"success": False, "error": str(e)}
         finally:
             if lock and lock.acquired:

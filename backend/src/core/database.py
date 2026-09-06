@@ -1,5 +1,9 @@
 import os
 import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import psycopg2
 import psycopg2.pool
 from psycopg2.extras import RealDictCursor
@@ -77,12 +81,9 @@ class LocalPostgresTableQuery:
 
     def select(self, cols="*", count=None):
         if cols and cols != "*":
-            clean_cols = []
-            for c in cols.split(","):
-                c = c.strip()
-                if "(" in c or ")" in c:
-                    continue
-                clean_cols.append(c)
+            import re
+            cleaned_str = re.sub(r"\w+\([^)]*\)", "", cols)
+            clean_cols = [c.strip() for c in cleaned_str.split(",") if c.strip() and "(" not in c and ")" not in c]
             self.select_cols = ", ".join(clean_cols) if clean_cols else "*"
         else:
             self.select_cols = "*"

@@ -56,6 +56,41 @@ class PHIScrubberFilter(logging.Filter):
 
 log.addFilter(PHIScrubberFilter())
 
+
+class AwaitableDict(dict):
+    """
+    A dict subclass that is directly awaitable, enabling dual sync/async compatibility:
+    - Synchronous callers: `res = service.place_confirmation_call(...)` (dict access works directly)
+    - Asynchronous callers: `res = await service.place_confirmation_call(...)` (resolves without TypeError)
+    """
+    def __await__(self):
+        async def _identity():
+            return self
+        return _identity().__await__()
+
+
+def _normalize_phone_e164(raw: Optional[str], default_country: str = "+1") -> str:
+    """HIPAA & Telephony Safe: Normalize phone to E.164 format."""
+    if not raw:
+        return ""
+    cleaned = str(raw).strip()
+    has_plus = cleaned.startswith("+")
+    digits = re.sub(r"[^\d]", "", cleaned)
+    if not digits:
+        return ""
+    if has_plus:
+        return f"+{digits}"
+    if cleaned.startswith("03") and len(digits) == 11:
+        return f"+92{digits[1:]}"
+    if digits.startswith("92") and len(digits) == 12:
+        return f"+{digits}"
+    if len(digits) == 10:
+        return f"{default_country}{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return f"+{digits}"
+
+
 # ── SDK import with graceful fallback ─────────────────────────────────────────
 try:
     from calle import CalleClient
@@ -246,7 +281,8 @@ class CalleService:
     """
 
     def __init__(self):
-        api_key = settings.CALLE_API_KEY or settings.calle_api_key
+        raw_key = settings.CALLE_API_KEY or settings.calle_api_key or ""
+        api_key = raw_key.strip() if isinstance(raw_key, str) else None
         base_url = settings.CALLE_BASE_URL or settings.calle_base_url
         if api_key and _SDK_AVAILABLE:
             # Pass base_url if the SDK supports it; CalleClient may accept it as a keyword arg
@@ -263,7 +299,14 @@ class CalleService:
 
 
     def is_live(self) -> bool:
-        return self.client is not None and not settings.calle_dry_run
+        if self.client is None:
+            return False
+        dry_val = getattr(settings, "CALLE_DRY_RUN", None)
+        if dry_val is None:
+            dry_val = getattr(settings, "calle_dry_run", False)
+        if isinstance(dry_val, str):
+            return dry_val.strip().lower() not in ("true", "1", "yes")
+        return not bool(dry_val)
 
     def is_dry_run(self) -> bool:
         return not self.is_live()
@@ -305,14 +348,15 @@ class CalleService:
         idempotency_key: str,
         region: str = "US",
         locale: str = "en-US",
-    ) -> Dict[str, Any]:
+    ) -> AwaitableDict:
         """Synchronous blocking CALL-E API call. Waits for call completion and returns structured extraction."""
-        reg, loc = self._detect_region_and_locale(phone, region)
+        phone_e164 = _normalize_phone_e164(phone) or phone
+        reg, loc = self._detect_region_and_locale(phone_e164, region)
         log.info("[CALL-E LIVE create_and_wait] Starting call key=%s region=%s", idempotency_key, reg)
         try:
             result = self.client.calls.create_and_wait(
                 task=task,
-                recipients=[{"phones": [phone], "region": reg, "locale": loc}],
+                recipients=[{"phones": [phone_e164], "region": reg, "locale": loc}],
                 result_schema=result_schema,
                 idempotency_key=idempotency_key,
             )
@@ -323,10 +367,10 @@ class CalleService:
                 res_dict.get("status"),
                 res_dict.get("task_completed"),
             )
-            return res_dict
+            return AwaitableDict(res_dict)
         except Exception as exc:
             log.error("[CALL-E ERROR] key=%s error_type=%s", idempotency_key, type(exc).__name__)
-            return self._error_result(str(exc))
+            return AwaitableDict(self._error_result(str(exc)))
 
     def _sync_create_fire_and_forget(
         self,
@@ -336,14 +380,15 @@ class CalleService:
         idempotency_key: str,
         webhook_url: Optional[str] = None,
         region: str = "US",
-    ) -> Dict[str, Any]:
-        """Create a call and return immediately (fire-and-forget for batch runs)."""
-        reg, loc = self._detect_region_and_locale(phone, region)
+    ) -> AwaitableDict:
+        """Create a call and return immediately (fire-and-forget for batch runs, sub-second latency)."""
+        phone_e164 = _normalize_phone_e164(phone) or phone
+        reg, loc = self._detect_region_and_locale(phone_e164, region)
         log.info("[CALL-E LIVE create] Fire-and-forget key=%s region=%s", idempotency_key, reg)
         try:
             kwargs: Dict[str, Any] = dict(
                 task=task,
-                recipients=[{"phones": [phone], "region": reg, "locale": loc}],
+                recipients=[{"phones": [phone_e164], "region": reg, "locale": loc}],
                 result_schema=result_schema,
                 idempotency_key=idempotency_key,
             )
@@ -355,7 +400,7 @@ class CalleService:
             res_dict = dict(result) if result else {}
             calle_id = res_dict.get("id") or res_dict.get("call_id", "")
             log.info("[CALL-E LIVE create] Call queued key=%s calle_id=%s", idempotency_key, calle_id)
-            return {
+            return AwaitableDict({
                 "id": calle_id,
                 "call_id": calle_id,
                 "status": res_dict.get("status", "queued"),
@@ -363,11 +408,11 @@ class CalleService:
                 "completion_confidence": {"score": 0.0, "label": "pending"},
                 "structured_result": res_dict.get("structured_result"),
                 "summary": "Call queued successfully with CALL-E agent dispatcher.",
-            }
+            })
         except Exception as exc:
             error_msg = str(exc)
             log.error("[CALL-E ERROR] key=%s error=%s", idempotency_key, error_msg)
-            return {
+            return AwaitableDict({
                 "id": None,
                 "status": "failed",
                 "task_completed": False,
@@ -376,7 +421,7 @@ class CalleService:
                 "evidence": [],
                 "error": error_msg,
                 "summary": error_msg,
-            }
+            })
 
     # ── Async Public Campaign Methods ──────────────────────────────────────────
 
@@ -392,13 +437,16 @@ class CalleService:
     ) -> Dict[str, Any]:
         """
         Campaign 1: 24-Hour Appointment Confirmation.
-        HIPAA-safe: only clinic name and appointment time in task — no patient name/DOB.
+        HIPAA-safe: only clinic name and appointment time in task — no patient DOB or medical diagnosis.
         """
         if self.is_dry_run():
             return self._mock_confirmation(time_str, idempotency_key)
 
+        greeting = f"Hello, this is an automated reminder from {clinic_name}."
+
         task = (
             f"You are an AI voice assistant calling on behalf of {clinic_name}. "
+            f"Greeting: '{greeting}'. "
             f"The patient has an appointment scheduled for tomorrow at {time_str}. "
             f"Politely ask if they can confirm their attendance. "
             f"If they can attend, thank them and confirm the time. "
@@ -459,6 +507,7 @@ class CalleService:
         webhook_url: Optional[str] = None,
         region: str = "US",
         wait_for_completion: bool = False,
+        patient_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Campaign 3: 30/60/90-Day Patient Recall Engine.
@@ -492,6 +541,7 @@ class CalleService:
         webhook_url: Optional[str] = None,
         region: str = "US",
         wait_for_completion: bool = False,
+        patient_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Campaign 4: Post-Visit Satisfaction Survey (NPS).
@@ -527,6 +577,7 @@ class CalleService:
         webhook_url: Optional[str] = None,
         region: str = "US",
         wait_for_completion: bool = False,
+        patient_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Campaign 5: Instant Waitlist Backfill.
@@ -660,11 +711,8 @@ class CalleService:
             if hasattr(self.client, "goals") and hasattr(self.client.goals, "list"):
                 res = await asyncio.to_thread(self.client.goals.list, limit=limit, after=after)
                 res_dict = dict(res) if res else {}
-                data = res_dict.get("data", [])
-                if not data:
-                    return self._mock_goals_list()
                 return res_dict
-            return self._mock_goals_list()
+            return {"object": "list", "data": [], "next_cursor": None}
         except Exception as exc:
             log.warning("[CALL-E GOALS LIST] %s — falling back to mock goals", exc)
             return self._mock_goals_list()
@@ -678,6 +726,8 @@ class CalleService:
         wait_for_completion: bool = False,
     ) -> Dict[str, Any]:
         """Execute a Goal Run per https://docs.heycall-e.com/goal-runs."""
+        phone_e164 = _normalize_phone_e164(phone) or phone
+        clean_vars = {k: v if isinstance(v, (str, int, float, bool)) else str(v) for k, v in variables.items()}
         if not self.client or self.is_dry_run():
             return {
                 "object": "goal_run",
@@ -685,12 +735,12 @@ class CalleService:
                 "goal_id": goal_id,
                 "status": "completed",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "variables": variables,
+                "variables": clean_vars,
                 "result": {
                     "status": "completed",
                     "task_completed": True,
-                    "summary": f"[DRY-RUN] Goal '{goal_id}' executed successfully for {phone}.",
-                    "extracted_data": variables,
+                    "summary": f"[DRY-RUN] Goal '{goal_id}' executed successfully for {phone_e164}.",
+                    "extracted_data": clean_vars,
                 },
                 "error": None,
                 "dry_run": True,
@@ -701,16 +751,16 @@ class CalleService:
                     res = await asyncio.to_thread(
                         self.client.goals.run_and_wait,
                         goal_id=goal_id,
-                        phone=phone,
-                        variables=variables,
+                        phone=phone_e164,
+                        variables=clean_vars,
                         idempotency_key=idempotency_key,
                     )
                 elif hasattr(self.client.goals, "run"):
                     res = await asyncio.to_thread(
                         self.client.goals.run,
                         goal_id=goal_id,
-                        phone=phone,
-                        variables=variables,
+                        phone=phone_e164,
+                        variables=clean_vars,
                         idempotency_key=idempotency_key,
                     )
                 else:
@@ -741,51 +791,121 @@ class CalleService:
 
     # ── Compatibility Aliases (for existing service layers & tests) ───────────
 
-    def place_confirmation_call(self, phone: str, clinic_name: str, time_str: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_confirmation_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        time_str: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return self._mock_confirmation(time_str, idempotency_key)
+            return AwaitableDict(self._mock_confirmation(time_str, idempotency_key))
         task = f"Call from {clinic_name} for appointment at {time_str}."
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, CONFIRMATION_SCHEMA, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, CONFIRMATION_SCHEMA, idempotency_key)
 
-    def place_no_show_recovery_call(self, phone: str, clinic_name: str, time_str: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_no_show_recovery_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        time_str: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+        patient_name: Optional[str] = None,
+        doctor_name: Optional[str] = None,
+        **kwargs,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return self._mock_noshow(idempotency_key)
-        task = f"Call from {clinic_name} regarding missed appointment at {time_str}."
+            return AwaitableDict(self._mock_noshow(idempotency_key))
+        p_name = patient_name or "Patient"
+        d_name = doctor_name or "the physician"
+        task = (
+            f"You are calling on behalf of {clinic_name}. "
+            f"We noticed that {p_name} missed their scheduled visit at {time_str} today with {d_name}. "
+            f"Express clinical concern for their wellbeing and reassure them that their health is our priority. "
+            f"Offer to reschedule the appointment, mentioning that {clinic_name} has waived any missed appointment fees (fee waiver approved). "
+            f"Ask what day and time works best for them."
+        )
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, NO_SHOW_SCHEMA, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, NO_SHOW_SCHEMA, idempotency_key)
 
-    def place_recall_call(self, phone: str, clinic_name: str, days_since_last_visit: int, recall_type: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_recall_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        days_since_last_visit: int,
+        recall_type: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return self._mock_recall(idempotency_key)
+            return AwaitableDict(self._mock_recall(idempotency_key))
         task = f"Call from {clinic_name} for {recall_type} recall."
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, RECALL_SCHEMA, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, RECALL_SCHEMA, idempotency_key)
 
-    def place_survey_call(self, phone: str, clinic_name: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_survey_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return self._mock_survey(idempotency_key)
+            return AwaitableDict(self._mock_survey(idempotency_key))
         task = f"Call from {clinic_name} for post-visit survey."
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, SURVEY_SCHEMA, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, SURVEY_SCHEMA, idempotency_key)
 
-    def place_waitlist_fill_call(self, phone: str, clinic_name: str, slot_date: str, slot_time: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_waitlist_fill_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        slot_date: str,
+        slot_time: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return self._mock_waitlist(slot_date, slot_time, idempotency_key)
+            return AwaitableDict(self._mock_waitlist(slot_date, slot_time, idempotency_key))
         task = f"Call from {clinic_name} for waitlist opening on {slot_date} at {slot_time}."
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, WAITLIST_SCHEMA, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, WAITLIST_SCHEMA, idempotency_key)
 
-    def place_pre_appointment_call(self, phone: str, clinic_name: str, time_str: str, idempotency_key: str, webhook_url: Optional[str] = None) -> Dict[str, Any]:
-        """Sync compatibility helper."""
+    def place_pre_appointment_call(
+        self,
+        phone: str,
+        clinic_name: str,
+        time_str: str,
+        idempotency_key: str,
+        webhook_url: Optional[str] = None,
+        wait_for_completion: bool = True,
+    ) -> AwaitableDict:
+        """Dual sync/async compatibility helper."""
         if self._is_dry_run():
-            return {
+            return AwaitableDict({
                 "id": f"mock_pre_{uuid.uuid4().hex[:8]}",
                 "status": "completed",
                 "task_completed": True,
                 "structured_result": {"acknowledged": True, "notes": "[DRY-RUN] Pre-appointment acknowledged."},
                 "summary": f"[DRY-RUN] Pre-appointment call for {time_str}.",
-            }
+            })
         task = f"Pre-appointment call from {clinic_name} for appointment at {time_str}."
         schema = {
             "type": "object",
@@ -793,13 +913,15 @@ class CalleService:
             "properties": {"acknowledged": {"type": "boolean"}, "notes": {"type": "string"}},
             "additionalProperties": False,
         }
+        if not wait_for_completion:
+            return self._sync_create_fire_and_forget(task, phone, schema, idempotency_key, webhook_url)
         return self._sync_create_and_wait(task, phone, schema, idempotency_key)
 
     # ── Mock Data Providers ───────────────────────────────────────────────────
 
     @staticmethod
-    def _error_result(error_msg: str) -> Dict[str, Any]:
-        return {
+    def _error_result(error_msg: str) -> AwaitableDict:
+        return AwaitableDict({
             "id": None,
             "status": "failed",
             "task_completed": False,
@@ -808,11 +930,11 @@ class CalleService:
             "evidence": {"error": error_msg},
             "error": error_msg,
             "summary": f"CALL-E API error: {error_msg}",
-        }
+        })
 
     @staticmethod
-    def _mock_confirmation(time_str: str, key: str = "") -> Dict[str, Any]:
-        return {
+    def _mock_confirmation(time_str: str, key: str = "") -> AwaitableDict:
+        return AwaitableDict({
             "id": f"mock_conf_{uuid.uuid4().hex[:8]}",
             "status": "completed",
             "task_completed": True,
@@ -825,11 +947,11 @@ class CalleService:
             },
             "summary": f"[DRY-RUN] Patient warmly confirmed appointment scheduled at {time_str}.",
             "evidence": ["Patient confirmed attendance clearly."],
-        }
+        })
 
     @staticmethod
-    def _mock_noshow(key: str = "") -> Dict[str, Any]:
-        return {
+    def _mock_noshow(key: str = "") -> AwaitableDict:
+        return AwaitableDict({
             "id": f"mock_noshow_{uuid.uuid4().hex[:8]}",
             "status": "completed",
             "task_completed": True,
@@ -842,11 +964,11 @@ class CalleService:
             },
             "summary": "[DRY-RUN] Patient requested rescheduling following missed visit.",
             "evidence": ["Patient requested new appointment slot."],
-        }
+        })
 
     @staticmethod
-    def _mock_recall(key: str = "") -> Dict[str, Any]:
-        return {
+    def _mock_recall(key: str = "") -> AwaitableDict:
+        return AwaitableDict({
             "id": f"mock_recall_{uuid.uuid4().hex[:8]}",
             "status": "completed",
             "task_completed": True,
@@ -859,11 +981,11 @@ class CalleService:
             },
             "summary": "[DRY-RUN] Patient expressed strong interest in booking routine follow-up.",
             "evidence": ["Patient agreed to come in next week."],
-        }
+        })
 
     @staticmethod
-    def _mock_survey(key: str = "") -> Dict[str, Any]:
-        return {
+    def _mock_survey(key: str = "") -> AwaitableDict:
+        return AwaitableDict({
             "id": f"mock_survey_{uuid.uuid4().hex[:8]}",
             "status": "completed",
             "task_completed": True,
@@ -875,11 +997,11 @@ class CalleService:
             },
             "summary": "[DRY-RUN] Patient gave a perfect 10/10 NPS rating.",
             "evidence": ["Patient rated 10 out of 10."],
-        }
+        })
 
     @staticmethod
-    def _mock_waitlist(slot_date: str, slot_time: str, key: str = "") -> Dict[str, Any]:
-        return {
+    def _mock_waitlist(slot_date: str, slot_time: str, key: str = "") -> AwaitableDict:
+        return AwaitableDict({
             "id": f"mock_waitlist_{uuid.uuid4().hex[:8]}",
             "status": "completed",
             "task_completed": True,
@@ -892,7 +1014,7 @@ class CalleService:
             },
             "summary": f"[DRY-RUN] Patient accepted slot on {slot_date} at {slot_time}.",
             "evidence": ["Patient confirmed they will take the earlier slot."],
-        }
+        })
 
     @staticmethod
     def _mock_goals_list() -> Dict[str, Any]:

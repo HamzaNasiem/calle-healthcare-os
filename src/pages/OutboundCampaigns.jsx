@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import CalleCallLog from '../components/CalleCallLog';
 
 const OutboundCampaigns = () => {
   const { clinicId } = useAuth();
@@ -97,11 +98,6 @@ const OutboundCampaigns = () => {
   const [goalSubmitting, setGoalSubmitting] = useState(false);
   const [goalResult, setGoalResult] = useState(null);
 
-  // ── Call Detail Inspector Modal State ─────────────────────────────────────────
-  const [selectedCall, setSelectedCall] = useState(null);
-  const [callEvents, setCallEvents] = useState([]);
-  const [loadingEvents, setLoadingEvents] = useState(false);
-  const [inspectorCopied, setInspectorCopied] = useState(false);
 
   // ── Toast Notification Helper ────────────────────────────────────────────────
   const notify = (msg, type = 'success') => {
@@ -177,24 +173,6 @@ const OutboundCampaigns = () => {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // ── Fetch Call Events for Inspector ──────────────────────────────────────────
-  const handleInspectCall = async (call) => {
-    setSelectedCall(call);
-    setCallEvents([]);
-    if (call.calle_call_id) {
-      setLoadingEvents(true);
-      try {
-        const evRes = await api.get(`/calle/calls/${call.calle_call_id}/events`).catch(() => null);
-        if (evRes && evRes.data && evRes.data.data) {
-          setCallEvents(evRes.data.data);
-        }
-      } catch (e) {
-        console.warn('Events fetch error:', e);
-      } finally {
-        setLoadingEvents(false);
-      }
-    }
-  };
 
   // ── Open Test Single Modal Prefilled for Specific Campaign ────────────────────
   const handleOpenTestModal = (campaignType = 'confirmation') => {
@@ -593,7 +571,7 @@ const OutboundCampaigns = () => {
                 <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">Tomorrow's Queue:</span>
                   <span className="font-bold text-emerald-400">
-                    {estimates?.campaigns?.confirmation?.queue_count || 0} patients ready (~${estimates?.campaigns?.confirmation?.estimated_cost?.toFixed(2) || '0.28'})
+                    {estimates?.campaigns?.confirmation?.queue_count || 0} patients ready (~${estimates?.campaigns?.confirmation?.estimated_cost !== undefined ? estimates.campaigns.confirmation.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
@@ -642,7 +620,7 @@ const OutboundCampaigns = () => {
                 <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">Today's Missed:</span>
                   <span className="font-bold text-amber-400">
-                    {estimates?.campaigns?.no_show?.queue_count || 0} no-shows ready (~${estimates?.campaigns?.no_show?.estimated_cost?.toFixed(2) || '0.14'})
+                    {estimates?.campaigns?.no_show?.queue_count || 0} no-shows ready (~${estimates?.campaigns?.no_show?.estimated_cost !== undefined ? estimates.campaigns.no_show.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
@@ -750,7 +728,7 @@ const OutboundCampaigns = () => {
                 <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">Today's Completed:</span>
                   <span className="font-bold text-purple-400">
-                    {estimates?.campaigns?.survey?.queue_count || 0} visits ready (~${estimates?.campaigns?.survey?.estimated_cost?.toFixed(2) || '0.14'})
+                    {estimates?.campaigns?.survey?.queue_count || 0} visits ready (~${estimates?.campaigns?.survey?.estimated_cost !== undefined ? estimates.campaigns.survey.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
@@ -823,7 +801,7 @@ const OutboundCampaigns = () => {
                 <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
                   <span className="text-on-surface-variant">Active Waitlist Queue:</span>
                   <span className="font-bold text-teal-400">
-                    {estimates?.campaigns?.waitlist?.queue_count || 1} waitlist patients pending opening
+                    {estimates?.campaigns?.waitlist?.queue_count ?? 0} waitlist patients pending opening
                   </span>
                 </div>
               </div>
@@ -930,203 +908,12 @@ const OutboundCampaigns = () => {
       {/* TAB 3: LIVE OUTBOUND ACTIVITY FEED & INSPECTOR                          */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {(activeMainTab === 'feed' || activeMainTab === 'campaigns') && (
-        <div className="card p-6 space-y-6 border border-outline/10">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
-                <PhoneCall className="w-5 h-5 text-emerald-400" />
-                Live Outbound Call Records & Extraction Activity
-              </h2>
-              <p className="text-xs text-on-surface-variant mt-0.5">
-                Real-time log of CALL-E autonomous calls, structured extractions, and downstream appointment updates.
-              </p>
-            </div>
-
-            {/* Filter Pills */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-on-surface-variant absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search ID, summary, notes..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 rounded-xl bg-surface border border-outline/20 text-xs text-on-surface focus:outline-none focus:border-emerald-500 w-48 sm:w-60"
-                />
-              </div>
-
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-surface border border-outline/20 text-xs text-on-surface focus:outline-none focus:border-emerald-500"
-              >
-                <option value="all">All Statuses</option>
-                <option value="completed">Completed</option>
-                <option value="running">Running</option>
-                <option value="queued">Queued</option>
-                <option value="failed">Failed</option>
-              </select>
-
-              <div className="flex items-center bg-surface-variant rounded-xl p-1 border border-outline/10 text-xs flex-wrap gap-1">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'confirmation', label: 'Confirmation' },
-                  { id: 'no_show', label: 'No-Show' },
-                  { id: 'recall', label: 'Recall' },
-                  { id: 'survey', label: 'Survey' },
-                  { id: 'waitlist', label: 'Waitlist' },
-                  { id: 'goal_run', label: 'Goal Run' },
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setFeedFilter(tab.id)}
-                    className={`px-2.5 py-1 rounded-lg font-semibold text-[11px] transition-all ${
-                      feedFilter === tab.id
-                        ? 'bg-surface text-on-surface shadow-sm border border-outline/10'
-                        : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Calls Table */}
-          {loading ? (
-            <div className="py-12 text-center space-y-3">
-              <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin mx-auto" />
-              <p className="text-xs text-on-surface-variant font-medium">Loading call activity feed...</p>
-            </div>
-          ) : filteredCalls.length === 0 ? (
-            <div className="py-12 text-center rounded-xl border border-dashed border-outline/20 space-y-3">
-              <PhoneCall className="w-8 h-8 text-on-surface-variant/40 mx-auto" />
-              <p className="text-sm font-semibold text-on-surface">No outbound calls match this filter</p>
-              <p className="text-xs text-on-surface-variant max-w-sm mx-auto">
-                Click any campaign card above or "Live Test Call" to execute an automated outbound outreach.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-outline/10 text-on-surface-variant font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Campaign</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Key Extracted Outcome</th>
-                    <th className="py-3 px-4">Confidence</th>
-                    <th className="py-3 px-4">CALL-E ID</th>
-                    <th className="py-3 px-4">Timestamp</th>
-                    <th className="py-3 px-4 text-right">Inspect</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline/5">
-                  {filteredCalls.map(c => {
-                    const campaignColors = {
-                      confirmation: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-                      no_show: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-                      recall: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
-                      survey: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-                      waitlist: 'bg-teal-500/10 text-teal-400 border-teal-500/20',
-                      goal_run: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-                    };
-
-                    const statusBadges = {
-                      completed: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-                      running: 'bg-sky-500/10 text-sky-400 border-sky-500/20 animate-pulse',
-                      queued: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-                      failed: 'bg-red-500/10 text-red-400 border-red-500/20',
-                    };
-
-                    const structured = c.structured_result || {};
-
-                    return (
-                      <tr key={c.id} className="hover:bg-surface-variant/30 transition-colors">
-                        <td className="py-3.5 px-4 font-semibold text-on-surface">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                              campaignColors[c.campaign_type] || 'bg-surface-variant text-on-surface-variant'
-                            }`}
-                          >
-                            {c.campaign_type}
-                          </span>
-                        </td>
-
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
-                              statusBadges[c.status] || 'bg-surface-variant text-on-surface-variant'
-                            }`}
-                          >
-                            {c.status === 'completed' && <CheckCircle2 className="w-3 h-3" />}
-                            {c.status === 'running' && <Clock className="w-3 h-3 animate-spin" />}
-                            {c.status === 'failed' && <AlertCircle className="w-3 h-3" />}
-                            {c.status}
-                          </span>
-                        </td>
-
-                        <td className="py-3.5 px-4 max-w-sm truncate text-on-surface-variant font-mono text-[11px]">
-                          {structured.will_attend && (
-                            <span className="text-emerald-400 font-bold">Conf: {structured.will_attend}</span>
-                          )}
-                          {structured.response_type && (
-                            <span className="text-amber-400 font-bold">Resp: {structured.response_type}</span>
-                          )}
-                          {structured.interested && (
-                            <span className="text-sky-400 font-bold">Interest: {structured.interested}</span>
-                          )}
-                          {structured.nps_score !== undefined && (
-                            <span className="text-purple-400 font-bold">NPS: {structured.nps_score}/10</span>
-                          )}
-                          {structured.accepts_slot !== undefined && (
-                            <span className="text-teal-400 font-bold">Accepted: {structured.accepts_slot ? 'Yes' : 'No'}</span>
-                          )}
-                          {!structured.will_attend &&
-                            !structured.response_type &&
-                            !structured.interested &&
-                            structured.nps_score === undefined &&
-                            structured.accepts_slot === undefined && (
-                              <span className="text-on-surface-variant/70">{c.summary || 'Structured result verified'}</span>
-                            )}
-                        </td>
-
-                        <td className="py-3.5 px-4 text-[11px]">
-                          {c.completion_score !== null && c.completion_score !== undefined ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-400 font-bold">
-                              {Math.round(c.completion_score * 100)}%
-                              <span className="text-[10px] text-on-surface-variant/70 font-normal">({c.completion_label || 'high'})</span>
-                            </span>
-                          ) : (
-                            <span className="text-on-surface-variant/40">—</span>
-                          )}
-                        </td>
-
-                        <td className="py-3.5 px-4 font-mono text-[11px] text-on-surface-variant">
-                          {c.calle_call_id ? c.calle_call_id.slice(0, 14) + '...' : 'Pending'}
-                        </td>
-
-                        <td className="py-3.5 px-4 text-on-surface-variant text-[11px]">
-                          {c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Just now'}
-                        </td>
-
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => handleInspectCall(c)}
-                            className="p-1.5 rounded-lg border border-outline/10 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
-                            title="Inspect Call & Structured Data"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <CalleCallLog
+          calls={calls}
+          loading={loading}
+          onRefresh={() => fetchData(true)}
+          refreshing={refreshing}
+        />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
@@ -1183,7 +970,11 @@ const OutboundCampaigns = () => {
                 <div className="flex items-center justify-between border-b border-outline/10 pb-3">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                    <h4 className="font-bold text-on-surface text-sm">Call Completed & Extracted</h4>
+                    <h4 className="font-bold text-on-surface text-sm">
+                      {singleResult.status === 'initiated' || singleResult.status === 'running' || singleResult.status === 'queued'
+                        ? 'Call Dispatched & Ringing'
+                        : 'Call Completed & Extracted'}
+                    </h4>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
                     Status: {singleResult.status}
@@ -1192,7 +983,11 @@ const OutboundCampaigns = () => {
 
                 <div className="space-y-2 text-xs">
                   <p className="text-on-surface-variant">
-                    <strong className="text-on-surface">Summary:</strong> {singleResult.summary || 'Call finished successfully.'}
+                    <strong className="text-on-surface">Summary:</strong>{' '}
+                    {singleResult.summary ||
+                      (singleResult.status === 'initiated'
+                        ? 'Telephony session dispatched. Patient phone is currently ringing.'
+                        : 'Call record processed and verified.')}
                   </p>
                   <div>
                     <div className="flex items-center justify-between text-[11px] font-bold text-on-surface mb-1">
@@ -1495,7 +1290,7 @@ const OutboundCampaigns = () => {
                     style={{ backgroundColor: '#7FCD4D' }}
                   >
                     <PhoneCall className="w-3.5 h-3.5" />
-                    <span>Place Live Call Now</span>
+                    <span>Execute Live Call Now</span>
                   </button>
                 </div>
               </form>
@@ -1609,113 +1404,6 @@ const OutboundCampaigns = () => {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 3: CALL DETAIL INSPECTOR & STRUCTURED OUTPUT VIEWER              */}
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {selectedCall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="card max-w-2xl w-full p-6 space-y-6 relative border border-outline/20 shadow-2xl max-h-[88vh] overflow-y-auto">
-            <button
-              onClick={() => setSelectedCall(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                  {selectedCall.campaign_type}
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider bg-surface-variant text-on-surface-variant">
-                  Status: {selectedCall.status}
-                </span>
-              </div>
-              <h3 className="text-lg font-bold text-on-surface">Call Result & Structured Data Inspection</h3>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              {/* Summary Box */}
-              <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/10 space-y-1">
-                <p className="font-semibold text-on-surface">Call Summary</p>
-                <p className="text-on-surface-variant leading-relaxed">
-                  {selectedCall.summary || 'No summary available for this call.'}
-                </p>
-              </div>
-
-              {/* Confidence Meter */}
-              {selectedCall.completion_score !== null && selectedCall.completion_score !== undefined && (
-                <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/10 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-on-surface">CALL-E Confidence Score</span>
-                    <span className="font-bold text-emerald-400">
-                      {Math.round(selectedCall.completion_score * 100)}% ({selectedCall.completion_label || 'high'})
-                    </span>
-                  </div>
-                  <div className="w-full bg-surface-variant rounded-full h-2 overflow-hidden border border-outline/10">
-                    <div
-                      className="bg-emerald-400 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.round(selectedCall.completion_score * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Structured JSON Output */}
-              <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-on-surface mb-2">
-                  <span>Structured Extraction (CALL-E JSON Output)</span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(JSON.stringify(selectedCall.structured_result || {}, null, 2));
-                      setInspectorCopied(true);
-                      setTimeout(() => setInspectorCopied(false), 2000);
-                    }}
-                    className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-mono text-[11px]"
-                  >
-                    {inspectorCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    <span>{inspectorCopied ? 'Copied' : 'Copy JSON'}</span>
-                  </button>
-                </div>
-                <pre className="p-4 rounded-xl bg-surface border border-outline/10 text-emerald-400 font-mono text-xs overflow-x-auto leading-relaxed">
-                  {JSON.stringify(selectedCall.structured_result || {}, null, 2)}
-                </pre>
-              </div>
-
-              {/* Downstream Actions Log */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/5">
-                  <p className="text-on-surface-variant">CALL-E ID</p>
-                  <p className="font-mono text-on-surface font-semibold truncate mt-0.5">
-                    {selectedCall.calle_call_id || 'N/A'}
-                  </p>
-                </div>
-                <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/5">
-                  <p className="text-on-surface-variant">Task Completed</p>
-                  <p className="font-semibold text-emerald-400 mt-0.5">
-                    {selectedCall.task_completed ? 'Yes (100%)' : 'Pending / No'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Developer Call Events (if available) */}
-              {callEvents.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-outline/10">
-                  <p className="font-semibold text-on-surface">Developer Call Event Stream</p>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {callEvents.map((ev, i) => (
-                      <div key={ev.id || i} className="p-2 rounded-lg bg-surface border border-outline/5 font-mono text-[10px] text-on-surface-variant flex items-center justify-between">
-                        <span className="text-emerald-400 font-bold">{ev.type}</span>
-                        <span>{ev.data?.message || JSON.stringify(ev.data)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
