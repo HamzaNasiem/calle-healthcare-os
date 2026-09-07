@@ -370,47 +370,44 @@ const OutboundCampaigns = () => {
       {/* ── Toast Notification ─────────────────────────────────────────────── */}
       {notification && (
         <div
-          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-2xl border text-sm font-medium transition-all transform animate-in slide-in-from-top-2 ${
+          className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-semibold transition-all transform animate-in slide-in-from-top-2 ${
             notification.type === 'error'
-              ? 'bg-red-950/90 border-red-500/50 text-red-200 shadow-red-900/20'
-              : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200 shadow-emerald-900/20'
+              ? 'bg-white border-red-200 text-red-900 shadow-red-900/10'
+              : 'bg-white border-emerald-200 text-emerald-900 shadow-emerald-900/10'
           }`}
         >
           {notification.type === 'error' ? (
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+            <CheckCircle2 className="w-5 h-5 text-[#396a00] flex-shrink-0" />
           )}
           <span>{notification.msg}</span>
         </div>
       )}
 
       {/* ── Header Hero Banner ─────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/50 via-surface to-surface p-6 sm:p-8">
-        <div className="absolute top-0 right-0 -mt-12 -mr-12 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-12 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="card p-6 sm:p-8 border border-[#edf1ef] relative overflow-hidden shadow-card bg-white">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2.5 max-w-3xl">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                <Sparkles className="w-3.5 h-3.5" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <Sparkles className="w-3.5 h-3.5 text-[#396a00]" />
                 CALL-E Voice AI Active (v{statusInfo?.api_version || '0.6.0'})
               </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-surface-variant text-on-surface-variant border border-outline/10">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#396a00]" />
                 HIPAA Certified Scrubber
               </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#7FCD4D]/15 text-[#396a00] border border-[#7FCD4D]/30">
+                <Radio className="w-3.5 h-3.5 text-[#396a00] animate-pulse" />
                 5 Automated Workflows
               </span>
             </div>
 
-            <h1 className="page-header-title text-2xl sm:text-3xl font-extrabold tracking-tight">
+            <h1 className="page-header-title text-2xl sm:text-3xl font-extrabold text-[#181c1c] tracking-tight">
               CALL-E Autonomous Outbound Campaigns
             </h1>
-            <p className="text-sm text-on-surface-variant leading-relaxed">
+            <p className="text-sm text-[#3d4946] leading-relaxed">
               Fully autonomous, HIPAA-compliant patient outreach for appointment confirmations, no-show recoveries, routine recalls, satisfaction surveys, and instant waitlist backfills.
             </p>
           </div>
@@ -419,16 +416,16 @@ const OutboundCampaigns = () => {
             <button
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant transition-all disabled:opacity-50"
+              className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] transition-all disabled:opacity-50"
               title="Refresh Engine Feed"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-[#396a00]' : ''}`} />
             </button>
 
             <button
               onClick={() => handleOpenTestModal('confirmation')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-[#1a3a2e] transition-all shadow-lg hover:opacity-95 active:scale-95 border border-emerald-400/30"
-              style={{ backgroundColor: '#7FCD4D' }}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-md hover:brightness-105 active:scale-95 cursor-pointer"
+              style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
             >
               <PhoneForwarded className="w-4 h-4" />
               <span>Live Test Call</span>
@@ -437,46 +434,46 @@ const OutboundCampaigns = () => {
         </div>
 
         {/* ── Key Performance Metrics Grid ─────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mt-6 pt-6 border-t border-outline/10">
-          <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/5">
-            <div className="flex items-center justify-between text-on-surface-variant text-xs font-semibold">
-              <span>Total Outbound Calls</span>
-              <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mt-6 pt-6 border-t border-[#edf1ef]">
+          <div className="p-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef]">
+            <div className="flex items-center justify-between text-[#3d4946] text-xs font-semibold">
+              <span>Total Outbound</span>
+              <PhoneCall className="w-3.5 h-3.5 text-[#396a00]" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-on-surface mt-1">{totalCallsCount}</p>
+            <p className="text-xl sm:text-2xl font-black text-[#181c1c] mt-1">{totalCallsCount}</p>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/5">
-            <div className="flex items-center justify-between text-on-surface-variant text-xs font-semibold">
+          <div className="p-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef]">
+            <div className="flex items-center justify-between text-[#3d4946] text-xs font-semibold">
               <span>Completed Calls</span>
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-emerald-400 mt-1">{completedCallsCount}</p>
+            <p className="text-xl sm:text-2xl font-black text-emerald-800 mt-1">{completedCallsCount}</p>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/5">
-            <div className="flex items-center justify-between text-on-surface-variant text-xs font-semibold">
+          <div className="p-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef]">
+            <div className="flex items-center justify-between text-[#3d4946] text-xs font-semibold">
               <span>Confirmed Attendance</span>
-              <CalendarCheck className="w-3.5 h-3.5 text-sky-400" />
+              <CalendarCheck className="w-3.5 h-3.5 text-sky-700" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-sky-400 mt-1">{confirmedApptsCount}</p>
+            <p className="text-xl sm:text-2xl font-black text-sky-800 mt-1">{confirmedApptsCount}</p>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/5">
-            <div className="flex items-center justify-between text-on-surface-variant text-xs font-semibold">
+          <div className="p-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef]">
+            <div className="flex items-center justify-between text-[#3d4946] text-xs font-semibold">
               <span>Rescheduled Recoveries</span>
-              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
             </div>
-            <p className="text-xl sm:text-2xl font-bold text-amber-400 mt-1">{rescheduledCount}</p>
+            <p className="text-xl sm:text-2xl font-black text-amber-800 mt-1">{rescheduledCount}</p>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/5 col-span-2 sm:col-span-1">
-            <div className="flex items-center justify-between text-on-surface-variant text-xs font-semibold">
+          <div className="p-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef] col-span-2 sm:col-span-1">
+            <div className="flex items-center justify-between text-[#3d4946] text-xs font-semibold">
               <span>Engine Status</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-[#396a00] animate-ping" />
             </div>
-            <p className="text-sm font-bold text-emerald-400 mt-1 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
+            <p className="text-sm font-black text-[#396a00] mt-1 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#396a00]" />
               {statusInfo?.live_mode ? 'Live CALL-E API' : 'Dry-Run Mode'}
             </p>
           </div>
@@ -484,7 +481,7 @@ const OutboundCampaigns = () => {
       </div>
 
       {/* ── Main Navigation Sub-Bar ─────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-outline/10 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#edf1ef] pb-4">
         <div className="tab-group">
           <button
             onClick={() => setActiveMainTab('campaigns')}
@@ -501,7 +498,7 @@ const OutboundCampaigns = () => {
             <Target className="w-4 h-4" />
             <span>Published Goals (API 0.6.0)</span>
             {goals.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                 {goals.length}
               </span>
             )}
@@ -514,7 +511,7 @@ const OutboundCampaigns = () => {
             <Activity className="w-4 h-4" />
             <span>Live Activity Feed</span>
             {calls.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-surface-variant text-on-surface-variant">
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
                 {calls.length}
               </span>
             )}
@@ -523,15 +520,15 @@ const OutboundCampaigns = () => {
 
         {/* ── Master Batch Dispatcher Bar ──────────────────────────────────── */}
         {activeMainTab === 'campaigns' && (
-          <div className="flex items-center gap-3 bg-surface-variant/40 p-1.5 px-3 rounded-xl border border-outline/10 text-xs">
+          <div className="flex items-center gap-3 bg-white p-2 px-3.5 rounded-xl border border-[#edf1ef] shadow-sm text-xs">
             <div className="flex items-center gap-2">
-              <span className="text-on-surface-variant">Backlog Queue:</span>
-              <span className="font-bold text-emerald-400 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+              <span className="text-[#3d4946] font-medium">Backlog Queue:</span>
+              <span className="font-bold text-emerald-800 px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-200">
                 {estimates?.total_queued || 0} calls ready
               </span>
-              <span className="text-on-surface-variant/60">|</span>
-              <span className="text-on-surface-variant">Est. Cost:</span>
-              <span className="font-bold text-on-surface">
+              <span className="text-slate-300">|</span>
+              <span className="text-[#3d4946] font-medium">Est. Cost:</span>
+              <span className="font-extrabold text-[#181c1c]">
                 ${estimates?.estimated_total_cost?.toFixed(2) || '0.00'}
               </span>
             </div>
@@ -539,8 +536,8 @@ const OutboundCampaigns = () => {
             <button
               onClick={handleTriggerAllCampaigns}
               disabled={triggeringAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all shadow hover:opacity-95 active:scale-95 disabled:opacity-40 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white transition-all shadow hover:brightness-105 active:scale-95 disabled:opacity-40 cursor-pointer"
+              style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
               title="Dispatch all due automated campaign batches now"
             >
               <Play className={`w-3.5 h-3.5 fill-current ${triggeringAll ? 'animate-spin' : ''}`} />
@@ -557,38 +554,38 @@ const OutboundCampaigns = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {/* ── CARD 1: 24-Hour Appointment Confirmation ─────────────────── */}
-            <div className="card p-5 flex flex-col justify-between hover:border-emerald-500/40 transition-all border border-outline/10 group relative overflow-hidden">
+            <div className="card p-5 flex flex-col justify-between hover:border-emerald-500/50 hover:shadow-md transition-all border border-[#edf1ef] bg-white group relative overflow-hidden">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center border border-emerald-500/25 group-hover:scale-110 transition-transform">
-                    <CalendarCheck className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center border border-emerald-200 group-hover:scale-105 transition-transform">
+                    <CalendarCheck className="w-5 h-5 text-[#396a00]" />
                   </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     24h Prior
                   </span>
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-on-surface text-base">24-Hour Appointment Confirmation</h3>
-                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                  <h3 className="font-bold text-[#181c1c] text-base">24-Hour Appointment Confirmation</h3>
+                  <p className="text-xs text-[#3d4946] mt-1 leading-relaxed">
                     Calls patients 24 hours prior to scheduled visits to confirm attendance, answer prep questions, or handle reschedule requests.
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
-                  <span className="text-on-surface-variant">Tomorrow's Queue:</span>
-                  <span className="font-bold text-emerald-400">
+                <div className="p-2.5 rounded-lg bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between text-xs">
+                  <span className="text-[#3d4946] font-medium">Tomorrow's Queue:</span>
+                  <span className="font-bold text-emerald-800">
                     {estimates?.campaigns?.confirmation?.queue_count || 0} patients ready (~${estimates?.campaigns?.confirmation?.estimated_cost !== undefined ? estimates.campaigns.confirmation.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-outline/10 space-y-2">
+              <div className="mt-6 pt-4 border-t border-[#edf1ef] space-y-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleTriggerCampaign('confirmation')}
                     disabled={triggering['confirmation']}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300 flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['confirmation'] ? 'animate-spin' : ''}`} />
                     <span>{triggering['confirmation'] ? 'Dispatching...' : 'Run Confirmation Batch'}</span>
@@ -596,7 +593,7 @@ const OutboundCampaigns = () => {
 
                   <button
                     onClick={() => handleOpenTestModal('confirmation')}
-                    className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
+                    className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] hover:text-[#181c1c] transition-all"
                     title="Test Single Call"
                   >
                     <PhoneForwarded className="w-4 h-4" />
@@ -606,38 +603,38 @@ const OutboundCampaigns = () => {
             </div>
 
             {/* ── CARD 2: 2-Hour Post-No-Show Recovery ─────────────────────── */}
-            <div className="card p-5 flex flex-col justify-between hover:border-amber-500/40 transition-all border border-outline/10 group relative overflow-hidden">
+            <div className="card p-5 flex flex-col justify-between hover:border-amber-500/50 hover:shadow-md transition-all border border-[#edf1ef] bg-white group relative overflow-hidden">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center border border-amber-500/25 group-hover:scale-110 transition-transform">
-                    <UserX className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center border border-amber-200 group-hover:scale-105 transition-transform">
+                    <UserX className="w-5 h-5 text-amber-800" />
                   </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
                     2h Post-Miss
                   </span>
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-on-surface text-base">2-Hour Post-No-Show Recovery</h3>
-                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                  <h3 className="font-bold text-[#181c1c] text-base">2-Hour Post-No-Show Recovery</h3>
+                  <p className="text-xs text-[#3d4946] mt-1 leading-relaxed">
                     Calls patients within 2 hours of a missed appointment to express care, address barriers, and re-book their visit immediately.
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
-                  <span className="text-on-surface-variant">Today's Missed:</span>
-                  <span className="font-bold text-amber-400">
+                <div className="p-2.5 rounded-lg bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between text-xs">
+                  <span className="text-[#3d4946] font-medium">Today's Missed:</span>
+                  <span className="font-bold text-amber-900">
                     {estimates?.campaigns?.no_show?.queue_count || 0} no-shows ready (~${estimates?.campaigns?.no_show?.estimated_cost !== undefined ? estimates.campaigns.no_show.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-outline/10 space-y-2">
+              <div className="mt-6 pt-4 border-t border-[#edf1ef] space-y-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleTriggerCampaign('no-show')}
                     disabled={triggering['no-show']}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-bold border border-amber-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['no-show'] ? 'animate-spin' : ''}`} />
                     <span>{triggering['no-show'] ? 'Dispatching...' : 'Run No-Show Recovery'}</span>
@@ -645,7 +642,7 @@ const OutboundCampaigns = () => {
 
                   <button
                     onClick={() => handleOpenTestModal('no_show')}
-                    className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
+                    className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] hover:text-[#181c1c] transition-all"
                     title="Test Single Call"
                   >
                     <PhoneForwarded className="w-4 h-4" />
@@ -655,19 +652,19 @@ const OutboundCampaigns = () => {
             </div>
 
             {/* ── CARD 3: 30/60/90-Day Patient Recall ──────────────────────── */}
-            <div className="card p-5 flex flex-col justify-between hover:border-sky-500/40 transition-all border border-outline/10 group relative overflow-hidden">
+            <div className="card p-5 flex flex-col justify-between hover:border-sky-500/50 hover:shadow-md transition-all border border-[#edf1ef] bg-white group relative overflow-hidden">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/15 text-sky-400 flex items-center justify-center border border-sky-500/25 group-hover:scale-110 transition-transform">
-                    <RotateCcw className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-900 flex items-center justify-center border border-sky-200 group-hover:scale-105 transition-transform">
+                    <RotateCcw className="w-5 h-5 text-sky-800" />
                   </div>
-                  <div className="flex items-center bg-surface-variant rounded-lg p-0.5 border border-outline/10 text-xs">
+                  <div className="flex items-center bg-[#edf1ef] rounded-lg p-0.5 border border-slate-200 text-xs">
                     {[30, 60, 90].map(d => (
                       <button
                         key={d}
                         onClick={() => setRecallDays(d)}
                         className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-all ${
-                          recallDays === d ? 'bg-sky-500 text-slate-950' : 'text-on-surface-variant hover:text-on-surface'
+                          recallDays === d ? 'bg-sky-700 text-white shadow-sm' : 'text-[#3d4946] hover:text-[#181c1c]'
                         }`}
                       >
                         {d}d
@@ -677,26 +674,26 @@ const OutboundCampaigns = () => {
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-on-surface text-base">30/60/90-Day Patient Recall</h3>
-                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                  <h3 className="font-bold text-[#181c1c] text-base">30/60/90-Day Patient Recall</h3>
+                  <p className="text-xs text-[#3d4946] mt-1 leading-relaxed">
                     Re-engages overdue patients due for follow-ups, preventive screenings, chronic care check-ups, and annual wellness visits.
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
-                  <span className="text-on-surface-variant">{recallDays}-Day Backlog:</span>
-                  <span className="font-bold text-sky-400">
+                <div className="p-2.5 rounded-lg bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between text-xs">
+                  <span className="text-[#3d4946] font-medium">{recallDays}-Day Backlog:</span>
+                  <span className="font-bold text-sky-900">
                     {estimates?.counts?.[`recall_${recallDays}`] || estimates?.campaigns?.recall?.queue_count || 0} patients ready
                   </span>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-outline/10 space-y-2">
+              <div className="mt-6 pt-4 border-t border-[#edf1ef] space-y-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleTriggerCampaign('recall')}
                     disabled={triggering['recall']}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 text-xs font-bold border border-sky-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-900 text-xs font-bold border border-sky-300 flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['recall'] ? 'animate-spin' : ''}`} />
                     <span>{triggering['recall'] ? 'Dispatching...' : 'Run Recall Batch'}</span>
@@ -704,7 +701,7 @@ const OutboundCampaigns = () => {
 
                   <button
                     onClick={() => handleOpenTestModal('recall')}
-                    className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
+                    className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] hover:text-[#181c1c] transition-all"
                     title="Test Single Call"
                   >
                     <PhoneForwarded className="w-4 h-4" />
@@ -714,38 +711,38 @@ const OutboundCampaigns = () => {
             </div>
 
             {/* ── CARD 4: Post-Visit Satisfaction Survey (NPS) ─────────────── */}
-            <div className="card p-5 flex flex-col justify-between hover:border-purple-500/40 transition-all border border-outline/10 group relative overflow-hidden">
+            <div className="card p-5 flex flex-col justify-between hover:border-purple-500/50 hover:shadow-md transition-all border border-[#edf1ef] bg-white group relative overflow-hidden">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center border border-purple-500/25 group-hover:scale-110 transition-transform">
-                    <Star className="w-5 h-5" />
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-900 flex items-center justify-center border border-purple-200 group-hover:scale-105 transition-transform">
+                    <Star className="w-5 h-5 text-purple-800" />
                   </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-200">
                     Post-Visit NPS
                   </span>
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-on-surface text-base">Post-Visit Satisfaction Survey</h3>
-                  <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                  <h3 className="font-bold text-[#181c1c] text-base">Post-Visit Satisfaction Survey</h3>
+                  <p className="text-xs text-[#3d4946] mt-1 leading-relaxed">
                     Collects 1-10 Net Promoter Scores (NPS) and structured quality feedback within hours of completed clinical visits.
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
-                  <span className="text-on-surface-variant">Today's Completed:</span>
-                  <span className="font-bold text-purple-400">
+                <div className="p-2.5 rounded-lg bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between text-xs">
+                  <span className="text-[#3d4946] font-medium">Today's Completed:</span>
+                  <span className="font-bold text-purple-900">
                     {estimates?.campaigns?.survey?.queue_count || 0} visits ready (~${estimates?.campaigns?.survey?.estimated_cost !== undefined ? estimates.campaigns.survey.estimated_cost.toFixed(2) : '0.00'})
                   </span>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-outline/10 space-y-2">
+              <div className="mt-6 pt-4 border-t border-[#edf1ef] space-y-2">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleTriggerCampaign('survey')}
                     disabled={triggering['survey']}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 text-xs font-bold border border-purple-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 text-xs font-bold border border-purple-300 flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['survey'] ? 'animate-spin' : ''}`} />
                     <span>{triggering['survey'] ? 'Dispatching...' : 'Run Post-Visit Survey'}</span>
@@ -753,7 +750,7 @@ const OutboundCampaigns = () => {
 
                   <button
                     onClick={() => handleOpenTestModal('survey')}
-                    className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
+                    className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] hover:text-[#181c1c] transition-all"
                     title="Test Single Call"
                   >
                     <PhoneForwarded className="w-4 h-4" />
@@ -763,61 +760,61 @@ const OutboundCampaigns = () => {
             </div>
 
             {/* ── CARD 5: Instant Waitlist Backfill ────────────────────────── */}
-            <div className="card p-5 flex flex-col justify-between hover:border-teal-500/40 transition-all border border-outline/10 group relative overflow-hidden md:col-span-2 lg:col-span-2">
+            <div className="card p-5 flex flex-col justify-between hover:border-teal-500/50 hover:shadow-md transition-all border border-[#edf1ef] bg-white group relative overflow-hidden md:col-span-2 lg:col-span-2">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-teal-500/15 text-teal-400 flex items-center justify-center border border-teal-500/25 group-hover:scale-110 transition-transform">
-                      <Zap className="w-5 h-5" />
+                    <div className="w-10 h-10 rounded-xl bg-teal-100 text-teal-900 flex items-center justify-center border border-teal-200 group-hover:scale-105 transition-transform">
+                      <Zap className="w-5 h-5 text-teal-800" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-on-surface text-base">Instant Waitlist Backfill</h3>
-                      <p className="text-xs text-on-surface-variant mt-0.5">
+                      <h3 className="font-bold text-[#181c1c] text-base">Instant Waitlist Backfill</h3>
+                      <p className="text-xs text-[#3d4946] mt-0.5">
                         Immediately contacts priority waitlist patients when an appointment cancels to recover lost revenue.
                       </p>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-200">
                     Revenue Recovery
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-on-surface-variant">Slot Date</label>
+                    <label className="text-[11px] font-semibold text-[#3d4946]">Slot Date</label>
                     <input
                       type="text"
                       value={waitlistDate}
                       onChange={e => setWaitlistDate(e.target.value)}
                       placeholder="e.g. Tomorrow or Friday"
-                      className="w-full px-3 py-1.5 rounded-lg bg-surface border border-outline/20 text-xs text-on-surface focus:outline-none focus:border-teal-500"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs text-[#181c1c] focus:outline-none focus:border-teal-600 shadow-sm"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-on-surface-variant">Slot Time</label>
+                    <label className="text-[11px] font-semibold text-[#3d4946]">Slot Time</label>
                     <input
                       type="text"
                       value={waitlistTime}
                       onChange={e => setWaitlistTime(e.target.value)}
                       placeholder="e.g. 10:30 AM"
-                      className="w-full px-3 py-1.5 rounded-lg bg-surface border border-outline/20 text-xs text-on-surface focus:outline-none focus:border-teal-500"
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs text-[#181c1c] focus:outline-none focus:border-teal-600 shadow-sm"
                     />
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-surface-variant/40 border border-outline/5 flex items-center justify-between text-xs">
-                  <span className="text-on-surface-variant">Active Waitlist Queue:</span>
-                  <span className="font-bold text-teal-400">
+                <div className="p-2.5 rounded-lg bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between text-xs">
+                  <span className="text-[#3d4946] font-medium">Active Waitlist Queue:</span>
+                  <span className="font-bold text-teal-900">
                     {estimates?.campaigns?.waitlist?.queue_count ?? 0} waitlist patients pending opening
                   </span>
                 </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-outline/10 flex items-center gap-2">
+              <div className="mt-6 pt-4 border-t border-[#edf1ef] flex items-center gap-2">
                 <button
                   onClick={() => handleTriggerCampaign('waitlist')}
                   disabled={triggering['waitlist']}
-                  className="flex-1 py-2.5 px-3 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-400 text-xs font-bold border border-teal-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-900 text-xs font-bold border border-teal-300 flex items-center justify-center gap-2 transition-all shadow-sm disabled:opacity-50"
                 >
                   <Play className={`w-3.5 h-3.5 fill-current ${triggering['waitlist'] ? 'animate-spin' : ''}`} />
                   <span>{triggering['waitlist'] ? 'Dispatching...' : 'Run Waitlist Backfill'}</span>
@@ -825,7 +822,7 @@ const OutboundCampaigns = () => {
 
                 <button
                   onClick={() => handleOpenTestModal('waitlist')}
-                  className="p-2.5 rounded-xl border border-outline/20 hover:bg-surface-variant text-on-surface-variant hover:text-on-surface transition-all"
+                  className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[#3d4946] hover:text-[#181c1c] transition-all"
                   title="Test Single Call"
                 >
                   <PhoneForwarded className="w-4 h-4" />
@@ -843,16 +840,16 @@ const OutboundCampaigns = () => {
         <div className="space-y-6 animate-in fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
-                <Target className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-lg font-bold text-[#181c1c] flex items-center gap-2">
+                <Target className="w-5 h-5 text-[#396a00]" />
                 Published Goal Runs (CALL-E 0.6.0 Protocol)
               </h2>
-              <p className="text-xs text-on-surface-variant mt-0.5">
+              <p className="text-xs text-[#3d4946] mt-0.5">
                 Trigger pre-configured, structured clinical outreach goals with dynamic patient variables.
               </p>
             </div>
 
-            <span className="text-xs text-on-surface-variant/80 font-mono bg-surface-variant px-3 py-1 rounded-lg border border-outline/10">
+            <span className="text-xs text-[#3d4946] font-mono bg-[#edf1ef] px-3 py-1 rounded-lg border border-slate-200">
               POST /calle/goals/{'{goal_id}'}/runs
             </span>
           </div>
@@ -861,31 +858,31 @@ const OutboundCampaigns = () => {
             {goals.map((goal) => (
               <div
                 key={goal.id}
-                className="card p-5 flex flex-col justify-between hover:border-emerald-500/30 transition-all border border-outline/10 space-y-4"
+                className="card p-5 flex flex-col justify-between hover:border-emerald-500/40 hover:shadow-md transition-all border border-[#edf1ef] bg-white space-y-4"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-surface-variant text-emerald-400 font-bold border border-outline/10">
+                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-[#edf1ef] text-emerald-800 font-bold border border-slate-200">
                       {goal.id}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
                       {goal.status || 'published'}
                     </span>
                   </div>
 
-                  <h3 className="font-bold text-on-surface text-base">{goal.name}</h3>
-                  <p className="text-xs text-on-surface-variant leading-relaxed">{goal.description}</p>
+                  <h3 className="font-bold text-[#181c1c] text-base">{goal.name}</h3>
+                  <p className="text-xs text-[#3d4946] leading-relaxed">{goal.description}</p>
 
                   {goal.variables && Object.keys(goal.variables).length > 0 && (
                     <div className="space-y-1 pt-1">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-[#3d4946]">
                         Dynamic Schema Variables:
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {Object.entries(goal.variables).map(([k, desc]) => (
                           <span
                             key={k}
-                            className="px-2 py-0.5 rounded-md bg-surface-variant/60 text-on-surface font-mono text-[10px] border border-outline/5"
+                            className="px-2 py-0.5 rounded-md bg-[#edf1ef] text-[#181c1c] font-mono text-[10px] border border-slate-200"
                             title={String(desc)}
                           >
                             {k}
@@ -896,10 +893,10 @@ const OutboundCampaigns = () => {
                   )}
                 </div>
 
-                <div className="pt-3 border-t border-outline/10">
+                <div className="pt-3 border-t border-[#edf1ef]">
                   <button
                     onClick={() => handleOpenGoalModal(goal)}
-                    className="w-full py-2 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center justify-center gap-2 transition-all"
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-300 flex items-center justify-center gap-2 transition-all shadow-sm"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Configure & Trigger Goal Run</span>
@@ -927,45 +924,45 @@ const OutboundCampaigns = () => {
       {/* MODAL 1: SINGLE LIVE TEST CALL DISPATCHER                               */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {showSingleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="card max-w-lg w-full p-6 space-y-6 relative border border-emerald-500/30 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="card max-w-lg w-full p-6 space-y-6 relative border border-slate-200 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowSingleModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-[#3d4946] hover:text-[#181c1c] hover:bg-slate-100"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-on-surface flex items-center gap-2">
-                <PhoneForwarded className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-lg font-extrabold text-[#181c1c] flex items-center gap-2">
+                <PhoneForwarded className="w-5 h-5 text-[#396a00]" />
                 Live Single Test Call Dispatcher
               </h3>
-              <p className="text-xs text-on-surface-variant">
-                Place an immediate test call via CALL-E SDK (<code className="text-emerald-400 font-mono">create_and_wait</code>) to any destination.
+              <p className="text-xs text-[#3d4946]">
+                Place an immediate test call via CALL-E SDK (<code className="text-emerald-800 font-bold font-mono">create_and_wait</code>) to any destination.
               </p>
             </div>
 
             {singleSubmitting ? (
               /* Live In-Progress State */
-              <div className="py-8 text-center space-y-5 rounded-2xl bg-surface-variant/30 border border-emerald-500/20 p-6">
+              <div className="py-8 text-center space-y-5 rounded-2xl bg-emerald-50/70 border border-emerald-200 p-6">
                 <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
                   <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
-                  <div className="relative w-12 h-12 rounded-full bg-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <div className="relative w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800">
                     <PhoneCall className="w-6 h-6 animate-pulse" />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <h4 className="font-bold text-on-surface text-base">CALL-E Active Phone Call In-Progress</h4>
-                  <div className="flex flex-col items-center gap-1 text-xs text-on-surface-variant">
-                    <p className="text-emerald-400 font-semibold flex items-center gap-1.5">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
+                  <h4 className="font-extrabold text-[#181c1c] text-base">CALL-E Active Phone Call In-Progress</h4>
+                  <div className="flex flex-col items-center gap-1 text-xs text-[#3d4946]">
+                    <p className="text-emerald-800 font-extrabold flex items-center gap-1.5">
+                      <RefreshCw className="w-3 h-3 animate-spin text-[#396a00]" />
                       {singleStep === 1 && '1/3 Initializing CALL-E SDK session & webhook...'}
                       {singleStep === 2 && '2/3 Dialing recipient phone line...'}
                       {singleStep === 3 && '3/3 Autonomous agent conversing & extracting JSON...'}
                     </p>
-                    <p className="text-[11px] text-on-surface-variant/70">
+                    <p className="text-[11px] text-[#3d4946]/80 font-medium">
                       Synchronously waiting for recipient call completion & structured extraction
                     </p>
                   </div>
@@ -973,41 +970,41 @@ const OutboundCampaigns = () => {
               </div>
             ) : singleResult ? (
               /* Result Completed View */
-              <div className="space-y-4 rounded-xl bg-surface-variant/30 border border-emerald-500/25 p-4">
-                <div className="flex items-center justify-between border-b border-outline/10 pb-3">
+              <div className="space-y-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef] p-4">
+                <div className="flex items-center justify-between border-b border-[#edf1ef] pb-3">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                    <h4 className="font-bold text-on-surface text-sm">
+                    <CheckCircle2 className="w-5 h-5 text-[#396a00]" />
+                    <h4 className="font-extrabold text-[#181c1c] text-sm">
                       {singleResult.status === 'initiated' || singleResult.status === 'running' || singleResult.status === 'queued'
                         ? 'Call Dispatched & Ringing'
                         : 'Call Completed & Extracted'}
                     </h4>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
                     Status: {singleResult.status}
                   </span>
                 </div>
 
                 {singleResult.warning && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
-                      <p className="font-bold text-amber-200">CALL-E Daily Trial Quota Active</p>
-                      <p className="text-[11px] text-amber-300/80 leading-relaxed">{singleResult.warning}</p>
+                      <p className="font-bold text-amber-950">CALL-E Daily Trial Quota Active</p>
+                      <p className="text-[11px] text-amber-900/90 leading-relaxed">{singleResult.warning}</p>
                     </div>
                   </div>
                 )}
 
                 <div className="space-y-2 text-xs">
-                  <p className="text-on-surface-variant">
-                    <strong className="text-on-surface">Summary:</strong>{' '}
+                  <p className="text-[#3d4946]">
+                    <strong className="text-[#181c1c]">Summary:</strong>{' '}
                     {singleResult.summary ||
                       (singleResult.status === 'initiated'
                         ? 'Telephony session dispatched. Patient phone is currently ringing.'
                         : 'Call record processed and verified.')}
                   </p>
                   <div>
-                    <div className="flex items-center justify-between text-[11px] font-bold text-on-surface mb-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-[#181c1c] mb-1">
                       <span>Extracted JSON Schema Result:</span>
                       <button
                         onClick={() => {
@@ -1015,13 +1012,13 @@ const OutboundCampaigns = () => {
                           setSingleCopied(true);
                           setTimeout(() => setSingleCopied(false), 2000);
                         }}
-                        className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-mono"
+                        className="flex items-center gap-1 text-[#396a00] hover:text-emerald-700 font-mono font-bold"
                       >
                         {singleCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                         <span>{singleCopied ? 'Copied' : 'Copy JSON'}</span>
                       </button>
                     </div>
-                    <pre className="p-3 rounded-lg bg-surface border border-outline/10 text-emerald-400 font-mono text-[11px] overflow-x-auto">
+                    <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 font-mono text-[11px] overflow-x-auto border border-slate-800">
                       {JSON.stringify(singleResult.structured_result || {}, null, 2)}
                     </pre>
                   </div>
@@ -1031,15 +1028,15 @@ const OutboundCampaigns = () => {
                   <button
                     type="button"
                     onClick={() => setSingleResult(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-surface-variant text-on-surface hover:bg-surface-variant/80"
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-[#edf1ef] text-[#181c1c] hover:bg-slate-200 border border-slate-200"
                   >
                     Test Another Call
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowSingleModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#1a3a2e]"
-                    style={{ backgroundColor: '#7FCD4D' }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm"
+                    style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
                   >
                     Done & View Feed
                   </button>
@@ -1049,7 +1046,7 @@ const OutboundCampaigns = () => {
               /* Input Form */
               <form onSubmit={handleSingleCallSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">Campaign Type</label>
+                  <label className="block text-xs font-bold text-[#181c1c] mb-1">Campaign Type</label>
                   <select
                     value={singleCampaign}
                     onChange={e => {
@@ -1058,7 +1055,7 @@ const OutboundCampaigns = () => {
                         setSingleAppointmentId('');
                       }
                     }}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                   >
                     <option value="confirmation">1. 24-Hour Appointment Confirmation</option>
                     <option value="no_show">2. 2-Hour Post-No-Show Recovery</option>
@@ -1070,8 +1067,8 @@ const OutboundCampaigns = () => {
 
                 {/* Recipient Source Mode Selection */}
                 <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1.5">Recipient Source</label>
-                  <div className="grid grid-cols-2 gap-2 p-1 bg-surface-variant/40 rounded-xl border border-outline/10">
+                  <label className="block text-xs font-bold text-[#181c1c] mb-1.5">Recipient Source</label>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-[#edf1ef] rounded-xl border border-slate-200">
                     <button
                       type="button"
                       onClick={() => {
@@ -1082,8 +1079,8 @@ const OutboundCampaigns = () => {
                       }}
                       className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
                         singleSource === 'existing'
-                          ? 'bg-surface text-on-surface shadow-sm border border-outline/20'
-                          : 'text-on-surface-variant hover:text-on-surface'
+                          ? 'bg-white text-[#181c1c] shadow-sm border border-slate-200'
+                          : 'text-[#3d4946] hover:text-[#181c1c]'
                       }`}
                     >
                       📅 Scheduled Appointment
@@ -1097,8 +1094,8 @@ const OutboundCampaigns = () => {
                       }}
                       className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
                         singleSource === 'custom'
-                          ? 'bg-surface text-on-surface shadow-sm border border-outline/20'
-                          : 'text-on-surface-variant hover:text-on-surface'
+                          ? 'bg-white text-[#181c1c] shadow-sm border border-slate-200'
+                          : 'text-[#3d4946] hover:text-[#181c1c]'
                       }`}
                     >
                       📱 Custom Phone Number
@@ -1108,13 +1105,13 @@ const OutboundCampaigns = () => {
 
                 {singleSource === 'existing' ? (
                   <div>
-                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                    <label className="block text-xs font-bold text-[#181c1c] mb-1">
                       Select Scheduled Appointment
                     </label>
                     <select
                       value={singleAppointmentId}
                       onChange={e => handleSelectAppt(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                     >
                       <option value="">-- Choose appointment from calendar ({appointmentsList.length} available) --</option>
                       {appointmentsList.map(appt => (
@@ -1124,7 +1121,7 @@ const OutboundCampaigns = () => {
                       ))}
                     </select>
                     {singleAppointmentId && (
-                      <div className="mt-2 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 space-y-0.5">
+                      <div className="mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 space-y-0.5">
                         <p className="font-bold">Patient: {singlePatientName || 'Patient'}</p>
                         <p>Phone: <span className="font-mono">{singlePhone}</span></p>
                         <p>Scheduled: {singleTime || 'Tomorrow'}</p>
@@ -1135,17 +1132,17 @@ const OutboundCampaigns = () => {
                   <>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-semibold text-on-surface mb-1">Patient Name</label>
+                        <label className="block text-xs font-bold text-[#181c1c] mb-1">Patient Name</label>
                         <input
                           type="text"
                           placeholder="e.g. Alex Johnson"
                           value={singlePatientName}
                           onChange={e => setSinglePatientName(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-on-surface mb-1">
+                        <label className="block text-xs font-bold text-[#181c1c] mb-1">
                           Phone Number (E.164)
                         </label>
                         <input
@@ -1154,21 +1151,21 @@ const OutboundCampaigns = () => {
                           placeholder="+14155552671"
                           value={singlePhone}
                           onChange={e => setSinglePhone(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                         />
                       </div>
                     </div>
                     {singleCampaign === 'confirmation' && (
                       <div>
-                        <label className="block text-xs font-semibold text-on-surface mb-1">Appointment Time</label>
+                        <label className="block text-xs font-bold text-[#181c1c] mb-1">Appointment Time</label>
                         <input
                           type="text"
                           value={singleTime}
                           onChange={e => setSingleTime(e.target.value)}
                           placeholder="e.g. Wednesday, Aug 26 at 10:30 AM (Auto-scheduled if empty)"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                         />
-                        <p className="text-[11px] text-on-surface-variant/70 mt-1">
+                        <p className="text-[11px] text-[#3d4946] mt-1 font-medium">
                           💡 System will atomically create a real appointment and link this call to the database.
                         </p>
                       </div>
@@ -1179,11 +1176,11 @@ const OutboundCampaigns = () => {
                 {singleCampaign === 'recall' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">Recall Threshold</label>
+                      <label className="block text-xs font-bold text-[#181c1c] mb-1">Recall Threshold</label>
                       <select
                         value={singleRecallDays}
                         onChange={e => setSingleRecallDays(Number(e.target.value))}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                       >
                         <option value={30}>30 Days Overdue</option>
                         <option value={60}>60 Days Overdue</option>
@@ -1191,13 +1188,13 @@ const OutboundCampaigns = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">Recall Type</label>
+                      <label className="block text-xs font-bold text-[#181c1c] mb-1">Recall Type</label>
                       <input
                         type="text"
                         value={singleRecallType}
                         onChange={e => setSingleRecallType(e.target.value)}
                         placeholder="Routine follow-up"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                       />
                     </div>
                   </div>
@@ -1206,23 +1203,23 @@ const OutboundCampaigns = () => {
                 {singleCampaign === 'waitlist' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">Open Slot Date</label>
+                      <label className="block text-xs font-bold text-[#181c1c] mb-1">Open Slot Date</label>
                       <input
                         type="text"
                         value={singleSlotDate}
                         onChange={e => setSingleSlotDate(e.target.value)}
                         placeholder="Tomorrow"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-on-surface mb-1">Open Slot Time</label>
+                      <label className="block text-xs font-bold text-[#181c1c] mb-1">Open Slot Time</label>
                       <input
                         type="text"
                         value={singleSlotTime}
                         onChange={e => setSingleSlotTime(e.target.value)}
                         placeholder="10:30 AM"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                       />
                     </div>
                   </div>
@@ -1231,8 +1228,8 @@ const OutboundCampaigns = () => {
                 {/* Engine Selector: CALL-E Hero vs Instant Direct Dial */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-on-surface">Telephony Dispatch Engine</label>
-                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">CALL-E Hero Voice Engine</span>
+                    <label className="block text-xs font-bold text-[#181c1c]">Telephony Dispatch Engine</label>
+                    <span className="text-[10px] font-extrabold text-[#396a00] uppercase tracking-wider">CALL-E Hero Voice Engine</span>
                   </div>
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
@@ -1240,19 +1237,19 @@ const OutboundCampaigns = () => {
                       onClick={() => setSingleEngine('calle')}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         singleEngine === 'calle'
-                          ? 'border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30'
-                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
+                          ? 'border-[#396a00] bg-emerald-50/70 ring-2 ring-[#396a00]/20'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-[#181c1c] flex items-center gap-1.5">
                           🤖 CALL-E Agent
                         </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
                           Hero Engine
                         </span>
                       </div>
-                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                      <p className="text-[11px] text-[#3d4946] leading-relaxed font-medium">
                         Autonomous CALL-E LLM agent with real-time goal planning and structured JSON schema extraction.
                       </p>
                     </button>
@@ -1262,29 +1259,29 @@ const OutboundCampaigns = () => {
                       onClick={() => setSingleEngine('instant')}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         singleEngine === 'instant'
-                          ? 'border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30'
-                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
+                          ? 'border-[#396a00] bg-emerald-50/70 ring-2 ring-[#396a00]/20'
+                          : 'border-slate-200 bg-white hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-[#181c1c] flex items-center gap-1.5">
                           ⚡ Instant Direct Dial
                         </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
                           1s Ring
                         </span>
                       </div>
-                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                      <p className="text-[11px] text-[#3d4946] leading-relaxed font-medium">
                         Direct SIP ring. Bell rings on the recipient phone within 1-2 seconds with fast voice dispatch.
                       </p>
                     </button>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/10 flex items-center justify-between">
+                <div className="p-3 rounded-xl bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-on-surface">Wait for Call Completion</p>
-                    <p className="text-[11px] text-on-surface-variant">
+                    <p className="text-xs font-bold text-[#181c1c]">Wait for Call Completion</p>
+                    <p className="text-[11px] text-[#3d4946]">
                       Hold browser connection open until caller hangs up (Turn OFF for instant 1s dispatch)
                     </p>
                   </div>
@@ -1292,7 +1289,7 @@ const OutboundCampaigns = () => {
                     type="checkbox"
                     checked={singleWaitForResult}
                     onChange={e => setSingleWaitForResult(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500"
+                    className="w-4 h-4 rounded text-[#396a00] focus:ring-[#396a00] accent-[#396a00]"
                   />
                 </div>
 
@@ -1300,14 +1297,14 @@ const OutboundCampaigns = () => {
                   <button
                     type="button"
                     onClick={() => setShowSingleModal(false)}
-                    className="px-4 py-2.5 rounded-xl border border-outline/20 text-xs font-bold text-on-surface-variant hover:bg-surface-variant"
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#3d4946] hover:bg-slate-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#1a3a2e] transition-all flex items-center gap-2 shadow-lg"
-                    style={{ backgroundColor: '#7FCD4D' }}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all flex items-center gap-2 shadow-md hover:brightness-105 active:scale-95 cursor-pointer"
+                    style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
                   >
                     <PhoneCall className="w-3.5 h-3.5" />
                     <span>Execute Live Call Now</span>
@@ -1323,42 +1320,42 @@ const OutboundCampaigns = () => {
       {/* MODAL 2: PUBLISHED GOAL RUN EXECUTOR (CALL-E 0.6.0)                    */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {showGoalModal && selectedGoal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
-          <div className="card max-w-lg w-full p-6 space-y-6 relative border border-emerald-500/30 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="card max-w-lg w-full p-6 space-y-6 relative border border-slate-200 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowGoalModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-[#3d4946] hover:text-[#181c1c] hover:bg-slate-100"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="space-y-1">
-              <span className="px-2 py-0.5 rounded-md bg-surface-variant text-emerald-400 font-mono text-[10px] font-bold">
+              <span className="px-2 py-0.5 rounded-md bg-[#edf1ef] text-emerald-800 font-mono text-[10px] font-bold border border-slate-200">
                 Goal ID: {selectedGoal.id}
               </span>
-              <h3 className="text-lg font-bold text-on-surface">{selectedGoal.name}</h3>
-              <p className="text-xs text-on-surface-variant">{selectedGoal.description}</p>
+              <h3 className="text-lg font-extrabold text-[#181c1c]">{selectedGoal.name}</h3>
+              <p className="text-xs text-[#3d4946]">{selectedGoal.description}</p>
             </div>
 
             {goalSubmitting ? (
-              <div className="py-8 text-center space-y-4 rounded-xl bg-surface-variant/30 border border-emerald-500/20">
-                <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-                <p className="text-xs font-bold text-on-surface">Executing Goal Run on CALL-E API 0.6.0...</p>
+              <div className="py-8 text-center space-y-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                <RefreshCw className="w-8 h-8 text-[#396a00] animate-spin mx-auto" />
+                <p className="text-xs font-bold text-[#181c1c]">Executing Goal Run on CALL-E API 0.6.0...</p>
               </div>
             ) : goalResult ? (
-              <div className="space-y-4 rounded-xl bg-surface-variant/30 border border-emerald-500/25 p-4 text-xs">
-                <div className="flex items-center justify-between border-b border-outline/10 pb-2">
-                  <span className="font-bold text-emerald-400">Goal Run Complete</span>
-                  <span className="font-mono text-[11px] text-on-surface-variant">ID: {goalResult.goal_run?.id || goalResult.record_id}</span>
+              <div className="space-y-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef] p-4 text-xs">
+                <div className="flex items-center justify-between border-b border-[#edf1ef] pb-2">
+                  <span className="font-bold text-emerald-800">Goal Run Complete</span>
+                  <span className="font-mono text-[11px] text-[#3d4946]">ID: {goalResult.goal_run?.id || goalResult.record_id}</span>
                 </div>
-                <pre className="p-3 rounded-lg bg-surface border border-outline/10 text-emerald-400 font-mono text-[11px] overflow-x-auto">
+                <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 font-mono text-[11px] overflow-x-auto border border-slate-800">
                   {JSON.stringify(goalResult.goal_run || goalResult, null, 2)}
                 </pre>
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     onClick={() => setShowGoalModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#1a3a2e]"
-                    style={{ backgroundColor: '#7FCD4D' }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm"
+                    style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
                   >
                     Close
                   </button>
@@ -1367,7 +1364,7 @@ const OutboundCampaigns = () => {
             ) : (
               <form onSubmit={handleGoalRunSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">
+                  <label className="block text-xs font-bold text-[#181c1c] mb-1">
                     Recipient Phone Number (E.164 format)
                   </label>
                   <input
@@ -1376,17 +1373,17 @@ const OutboundCampaigns = () => {
                     placeholder="+1XXXXXXXXXX"
                     value={goalPhone}
                     onChange={e => setGoalPhone(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-outline/20 bg-surface text-on-surface text-sm focus:outline-none focus:border-emerald-500"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-sm focus:outline-none focus:border-[#396a00] shadow-sm"
                   />
                 </div>
 
                 {selectedGoal.variables && Object.keys(selectedGoal.variables).length > 0 && (
                   <div className="space-y-3 pt-1">
-                    <p className="text-xs font-bold text-on-surface">Goal Variables:</p>
+                    <p className="text-xs font-bold text-[#181c1c]">Goal Variables:</p>
                     {Object.entries(selectedGoal.variables).map(([k, desc]) => (
                       <div key={k}>
-                        <label className="block text-[11px] font-semibold text-on-surface-variant mb-1">
-                          {k} <span className="text-[10px] text-on-surface-variant/60">({String(desc)})</span>
+                        <label className="block text-[11px] font-semibold text-[#3d4946] mb-1">
+                          {k} <span className="text-[10px] text-[#3d4946]/70">({String(desc)})</span>
                         </label>
                         <input
                           type="text"
@@ -1394,7 +1391,7 @@ const OutboundCampaigns = () => {
                           value={goalVariables[k] || ''}
                           onChange={e => setGoalVariables(prev => ({ ...prev, [k]: e.target.value }))}
                           placeholder={`Enter ${k}`}
-                          className="w-full px-3 py-2 rounded-xl border border-outline/20 bg-surface text-on-surface text-xs focus:outline-none focus:border-emerald-500"
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-[#181c1c] text-xs focus:outline-none focus:border-[#396a00] shadow-sm"
                         />
                       </div>
                     ))}
@@ -1405,14 +1402,14 @@ const OutboundCampaigns = () => {
                   <button
                     type="button"
                     onClick={() => setShowGoalModal(false)}
-                    className="px-4 py-2.5 rounded-xl border border-outline/20 text-xs font-bold text-on-surface-variant hover:bg-surface-variant"
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-[#3d4946] hover:bg-slate-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#1a3a2e] transition-all flex items-center gap-2 shadow-lg"
-                    style={{ backgroundColor: '#7FCD4D' }}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all flex items-center gap-2 shadow-md hover:brightness-105 active:scale-95 cursor-pointer"
+                    style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>Run Goal Now</span>
