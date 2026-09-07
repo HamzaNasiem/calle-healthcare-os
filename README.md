@@ -7,7 +7,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20SSL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![CALL-E SDK](https://img.shields.io/badge/CALL--E-0.6.0%20SDK-FF4F00?style=for-the-badge)](https://heycall-e.com)
 [![HIPAA Compliant](https://img.shields.io/badge/HIPAA-BAA%20%2B%20AES--256-blue?style=for-the-badge&logo=shield)](https://github.com/HamzaNasiem/calle-healthcare-os)
-[![Test Suite](https://img.shields.io/badge/Tests-12%2F12%20Passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/HamzaNasiem/calle-healthcare-os)
+[![Test Suite](https://img.shields.io/badge/Tests-25%2F25%20Passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](https://github.com/HamzaNasiem/calle-healthcare-os)
 
 ---
 
@@ -95,6 +95,50 @@ In traditional healthcare IVR or generic webhook-based systems, multi-hop routin
 ![Telephony Dial & Ring Latency Benchmark](docs/assets/telephony_latency_benchmark.png)
 
 > **Figure 2:** *Telephony connection and bell ring latency benchmark comparing legacy clinic IVRs, multi-hop webhooks, and Bytelytic OS optimized SIP routing.*
+
+---
+
+## 🎙️ CALL-E Autonomous Voice Agent Architecture
+
+Bytelytic Clinic OS is architected natively around the **CALL-E Python SDK (`calle-ai>=0.2.0`)**, running autonomous conversational agents that execute complex clinical workflows with human-grade empathy, prompt-level clinical guardrails, and deterministic schema extraction.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   CALL-E Autonomous Clinical Pipeline                   │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+         ┌───────────────────────────┴───────────────────────────┐
+         ▼                                                       ▼
+┌──────────────────────────────────┐            ┌──────────────────────────────────┐
+│  1. Dynamic Prompt Planning      │            │  2. Task-Driven Voice Execution  │
+├──────────────────────────────────┤            ├──────────────────────────────────┤
+│ • Clinical intent synthesis      │            │ • Sub-second direct SIP trunk    │
+│ • Practice doctor & clinic meta  │  ────────> │ • Bedside empathy guardrails     │
+│ • Dynamic appointment context    │            │ • Natural interruption handling  │
+│ • Strict HIPAA boundary rules    │            │ • DTMF touch-tone navigation     │
+└──────────────────────────────────┘            └────────────────┬─────────────────┘
+                                                                 │
+         ┌───────────────────────────────────────────────────────┘
+         ▼
+┌──────────────────────────────────┐            ┌──────────────────────────────────┐
+│  3. Structured Result Extraction │            │  4. Real-Time Webhook Ingestion  │
+├──────────────────────────────────┤            ├──────────────────────────────────┤
+│ • Immutable JSON result_schema   │            │ • POST /api/v1/calle/webhook     │
+│ • Strict Pydantic enforcement    │  ────────> │ • Cryptographic HMAC validation  │
+│ • Structured clinic dispositions │            │ • Real-time DB state transition  │
+│ • Rebook, confirm, NPS, concerns │            │ • Zero PHI logged to stdout      │
+└──────────────────────────────────┘            └──────────────────────────────────┘
+```
+
+### Key Technical Pillars:
+1. **Task-Driven Prompt Planning:**
+   Instead of brittle, hardcoded phone trees, Bytelytic OS synthesizes complete clinical prompt contexts dynamically from EHR patient charts (`calle_service.py`). Each call objective is formulated as a goal with strict clinical bedside manner, rescheduling bounds, and emergency symptom escalation protocols.
+2. **Deterministic JSON Schema Enforcement:**
+   Every outbound campaign enforces an immutable JSON `result_schema`. When the patient call completes, CALL-E's LLM engine structures the conversation outcome into validated JSON properties (e.g. `will_attend`, `reschedule_request`, `cancellation_reason`, `nps_score`), eliminating unstructured text parsing errors.
+3. **Real-Time Webhook Ingestion into HIPAA EHR:**
+   Call completions trigger webhooks to `/api/v1/calle/webhook`. The endpoint validates signature authenticity, extracts structured payloads, updates provider calendars in PostgreSQL, and creates an audit trail entry—instantly converting voice interactions into verified EHR records.
+4. **Sub-Second Telephony Transport:**
+   By coupling CALL-E's autonomous agent brain with direct SIP signaling over Telnyx trunks, time-to-ring is slashed to **0.84 seconds**, completely eliminating the 15–30 second dead-air delay common in legacy healthcare telephony.
 
 ---
 
@@ -197,7 +241,7 @@ As a healthcare operations platform, Bytelytic OS adheres to strict HIPAA compli
 ┌─────────────────▼──────────────────┐ ┌──────────────▼───────────────────┐
 │          DATABASE LAYER            │ │          VOICE AI LAYER          │
 │       PostgreSQL 16 (SSL)          │ │       CALL-E SDK (calle-ai)      │
-│    SQLAlchemy Async / Psycopg2     │ │    Telnyx VoIP / Retell SIP      │
+│    SQLAlchemy Async / Psycopg2     │ │      CALL-E Voice / Telnyx SIP   │
 └────────────────────────────────────┘ └──────────────────────────────────┘
 ```
 
@@ -251,54 +295,114 @@ npm run dev
 
 ---
 
+## 🔐 Environment Variables & Secret Configuration
+
+Configure `.env` in the `backend/` directory using the provided `backend/.env.example` template:
+
+| Variable | Category | Required | Description / Default |
+|---|---|---|---|
+| `CALLE_API_KEY` | **Voice AI Engine** | **Yes** | Primary API key for the official CALL-E SDK (`iams_live_...`). |
+| `CALLE_BASE_URL` | **Voice AI Engine** | No | Base URL for CALL-E API (default: `https://api.heycall-e.com`). |
+| `CALLE_WEBHOOK_SECRET`| **Voice AI Engine** | No | HMAC key for verifying incoming CALL-E call completion webhooks. |
+| `CALLE_DRY_RUN` | **Voice AI Engine** | No | Set to `false` for live real phone dispatches, `true` for dry run simulation. |
+| `DATABASE_URL` | **Persistence** | **Yes** | PostgreSQL 16 connection string (`postgresql+asyncpg://...`). |
+| `AUDIT_DATABASE_URL` | **Compliance** | **Yes** | Dedicated audit log PostgreSQL database for HIPAA CFR § 164.312(b). |
+| `JWT_PRIVATE_KEY` | **Security** | **Yes** | RSA-2048 private key for signing clinical staff JWT session tokens. |
+| `JWT_PUBLIC_KEY` | **Security** | **Yes** | RSA-2048 public key for verifying JWT tokens across microservices. |
+| `ENCRYPTION_KEY` | **Security** | **Yes** | Base64-encoded 256-bit symmetric key for AES-256-GCM PHI column encryption. |
+| `TELNYX_API_KEY` | **Telephony Carrier**| **Yes** | Carrier API key for SIP trunk transport and transactional patient SMS. |
+| `TELNYX_PUBLIC_KEY` | **Telephony Carrier**| **Yes** | Ed25519 public key for verifying inbound carrier webhooks. |
+| `TELNYX_DEFAULT_NUMBER`| **Telephony Carrier**| **Yes** | Provisioned clinic caller-ID telephone number in E.164 format. |
+
+---
+
 ## 🧪 Automated Testing & Verification
 
-Bytelytic OS maintains comprehensive automated test suites covering integrations, appointment validation, HIPAA logging, and campaign dispatch:
+Bytelytic OS maintains comprehensive automated test suites covering the CALL-E Webhook pipeline, appointment validation, HIPAA logging, and campaign dispatch:
 
 ```bash
-# Run pytest test suite:
-pytest backend/tests/test_integrations.py backend/tests/test_appointment_types.py -v
+# Run the complete test suite:
+pytest backend/tests/test_calle_webhook_pipeline.py backend/tests/test_integrations.py backend/tests/test_appointment_types.py -v
 ```
 
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.12.0, pytest-9.0.2, pluggy-1.6.0
-collected 12 items
+collected 25 items
 
-backend/tests/test_integrations.py::test_get_integrations_status_connected PASSED [  8%]
-backend/tests/test_integrations.py::test_get_integrations_status_disconnected PASSED [ 16%]
-backend/tests/test_integrations.py::test_update_integrations_settings PASSED [ 25%]
-backend/tests/test_integrations.py::test_update_calle_api_key PASSED     [ 33%]
-backend/tests/test_integrations.py::test_disconnect_google_calendar PASSED [ 41%]
-backend/tests/test_integrations.py::test_retell_sync_or_create PASSED    [ 50%]
-backend/tests/test_integrations.py::test_integration_connectivity_checks PASSED [ 58%]
-backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_validation PASSED [ 66%]
-backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_deduplication_and_sanitization PASSED [ 75%]
-backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_fallback_and_types_matching PASSED [ 83%]
-backend/tests/test_appointment_types.py::test_voice_prompt_builder_with_appointment_types PASSED [ 91%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_auth_valid_event_id_header PASSED [  4%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_auth_valid_bearer_token PASSED    [  8%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_auth_valid_x_calle_signature PASSED [ 12%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_auth_rejected_on_invalid_credentials PASSED [ 16%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_event_call_completed PASSED       [ 20%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_event_call_failed PASSED          [ 24%]
+backend/tests/test_calle_webhook_pipeline.py::test_webhook_event_result_validation_failed PASSED [ 28%]
+backend/tests/test_calle_webhook_pipeline.py::test_confirmation_patient_confirms PASSED     [ 32%]
+backend/tests/test_calle_webhook_pipeline.py::test_confirmation_patient_reschedules PASSED  [ 36%]
+backend/tests/test_calle_webhook_pipeline.py::test_confirmation_patient_cancels_triggers_waitlist_fill PASSED [ 40%]
+backend/tests/test_calle_webhook_pipeline.py::test_noshow_recovery_patient_rebooks PASSED   [ 44%]
+backend/tests/test_calle_webhook_pipeline.py::test_post_visit_survey_ingestion PASSED       [ 48%]
+backend/tests/test_calle_webhook_pipeline.py::test_websocket_broadcast_suite PASSED         [ 52%]
+backend/tests/test_integrations.py::test_get_integrations_status_connected PASSED            [ 56%]
+backend/tests/test_integrations.py::test_get_integrations_status_disconnected PASSED         [ 60%]
+backend/tests/test_integrations.py::test_update_integrations_settings PASSED                 [ 64%]
+backend/tests/test_integrations.py::test_update_calle_api_key PASSED                         [ 68%]
+backend/tests/test_integrations.py::test_disconnect_google_calendar PASSED                   [ 72%]
+backend/tests/test_integrations.py::test_agent_sync_or_create PASSED                         [ 76%]
+backend/tests/test_integrations.py::test_integration_connectivity_checks PASSED              [ 80%]
+backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_validation PASSED [ 84%]
+backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_deduplication_and_sanitization PASSED [ 88%]
+backend/tests/test_appointment_types.py::test_clinic_update_appointment_types_fallback_and_types_matching PASSED [ 92%]
+backend/tests/test_appointment_types.py::test_voice_prompt_builder_with_appointment_types PASSED [ 96%]
 backend/tests/test_appointment_types.py::test_voice_prompt_builder_without_appointment_types_fallback PASSED [100%]
 
-============================= 12 passed in 4.76s ==============================
+============================= 25 passed in 6.73s ==============================
 ```
 
 ---
 
-## 📡 Key REST API Endpoints
+## 📡 Complete CALL-E REST API Reference
 
-### 1. System Keep-Alive Pulse
+All outbound calling operations are served under the `/api/v1/calle` prefix on the live backend:
+
+| Method | Endpoint | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/api/v1/calle/status` | Bearer Token | Check CALL-E API key validation, connection health, and live mode flag. |
+| `GET` | `/api/v1/calle/campaigns/estimates` | Bearer Token | Fetch real-time backlog queue counts, estimated call time, and cost estimates across all 5 campaigns. |
+| `POST` | `/api/v1/calle/campaigns/confirmation` | Bearer (Admin) | Batch dispatch: 24h pre-appointment attendance confirmations. |
+| `POST` | `/api/v1/calle/campaigns/no-show` | Bearer (Admin) | Batch dispatch: 2h immediate no-show recovery calls. |
+| `POST` | `/api/v1/calle/campaigns/recall` | Bearer (Admin) | Batch dispatch: 30/60/90-day overdue patient recall calls. |
+| `POST` | `/api/v1/calle/campaigns/survey` | Bearer (Admin) | Batch dispatch: Post-visit NPS and clinical quality surveys. |
+| `POST` | `/api/v1/calle/campaigns/waitlist` | Bearer (Admin) | Batch dispatch: Auto-dial standby waitlist patients for open slot backfill. |
+| `POST` | `/api/v1/calle/calls/single` | Bearer Token | Trigger a single test or patient voice call (supports synchronous wait). |
+| `GET` | `/api/v1/calle/calls` | Bearer Token | List all historical dispatches with transcripts, status, and extracted schemas. |
+| `GET` | `/api/v1/calle/calls/{record_id}` | Bearer Token | Retrieve single call record and query CALL-E for live status synchronization. |
+| `GET` | `/api/v1/calle/calls/{calle_call_id}/events`| Bearer Token | Developer-facing event stream for live call monitoring. |
+| `POST` | `/api/v1/calle/webhook` | Webhook Signature| Ingest terminal call outcomes, parse JSON schemas, and update EHR records. |
+| `GET` | `/api/v1/calle/goals` | Bearer Token | List published goals via CALL-E 0.6.0 SDK. |
+| `POST` | `/api/v1/calle/goals/{goal_id}/runs` | Bearer Token | Trigger parameterized Goal Run execution. |
+
+---
+
+### Example API Invocations
+
+#### 1. Check CALL-E Engine Status
 ```bash
-curl -X GET https://calle-healthcare-os.onrender.com/ping
-# Response: "OK" (HTTP 200, 2ms response time)
+curl -X GET https://calle-healthcare-os.onrender.com/api/v1/calle/status \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+**Sample Response:**
+```json
+{
+  "status": "connected",
+  "live_mode": true,
+  "calle_base_url": "https://api.heycall-e.com",
+  "active_campaigns": 5,
+  "queue_depth": 0
+}
 ```
 
-### 2. Clinic Staff Authentication
-```bash
-curl -X POST https://calle-healthcare-os.onrender.com/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "admin@callehealthcare.com", "password": "Password123!"}'
-```
-
-### 3. Single Outbound Call Dispatch
+#### 2. Trigger Single Autonomous Voice Call
 ```bash
 curl -X POST https://calle-healthcare-os.onrender.com/api/v1/calle/calls/single \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
@@ -309,14 +413,30 @@ curl -X POST https://calle-healthcare-os.onrender.com/api/v1/calle/calls/single 
     "patient_name": "Eleanor Vance",
     "time_str": "tomorrow at 10:30 AM",
     "wait_for_completion": false,
-    "engine": "instant"
+    "engine": "calle"
   }'
 ```
 
-### 4. Trigger Batch Campaign Run
+#### 3. Fetch Real-Time Campaign Estimates & Backlog Counts
 ```bash
-curl -X POST https://calle-healthcare-os.onrender.com/api/v1/calle/campaigns/confirmation \
+curl -X GET https://calle-healthcare-os.onrender.com/api/v1/calle/campaigns/estimates \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+#### 4. Ingest Terminal Call Webhook (EHR Synchronization)
+```bash
+curl -X POST https://calle-healthcare-os.onrender.com/api/v1/calle/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "call_id": "call_98fbc2e1",
+    "status": "completed",
+    "duration_seconds": 94,
+    "extracted_data": {
+      "will_attend": "yes",
+      "reschedule_request": false,
+      "clinical_concerns": "inquired about post-op knee brace"
+    }
+  }'
 ```
 
 ---

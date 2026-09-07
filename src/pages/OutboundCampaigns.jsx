@@ -83,7 +83,7 @@ const OutboundCampaigns = () => {
   const [singleSlotDate, setSingleSlotDate] = useState('Tomorrow');
   const [singleSlotTime, setSingleSlotTime] = useState('10:30 AM');
   const [singleWaitForResult, setSingleWaitForResult] = useState(false); // Non-blocking dispatch for instant 1s phone ringing
-  const [singleEngine, setSingleEngine] = useState('instant'); // 'instant' (1s SIP ring) | 'calle' (autonomous task)
+  const [singleEngine, setSingleEngine] = useState('calle'); // 'calle' (hero autonomous task) | 'instant' (high-speed dial)
   const [singleSubmitting, setSingleSubmitting] = useState(false);
   const [singleStep, setSingleStep] = useState(1);
   const [singleResult, setSingleResult] = useState(null);
@@ -184,23 +184,24 @@ const OutboundCampaigns = () => {
 
   // ── Trigger Batch Campaign ───────────────────────────────────────────────────
   const handleTriggerCampaign = async (type) => {
-    setTriggering(prev => ({ ...prev, [type]: true }));
+    const normType = type === 'no_show' ? 'no-show' : type;
+    setTriggering(prev => ({ ...prev, [type]: true, [normType]: true }));
     try {
-      let endpoint = `/calle/campaigns/${type}`;
+      let endpoint = `/calle/campaigns/${normType}`;
       let body = {};
-      if (type === 'recall') {
+      if (normType === 'recall') {
         body = { days_threshold: recallDays, limit: 20 };
-      } else if (type === 'waitlist') {
+      } else if (normType === 'waitlist') {
         body = { slot_date: waitlistDate, slot_time: waitlistTime, limit: 15 };
       }
 
       const res = await api.post(endpoint, body);
-      notify(res.data?.message || `Campaign '${type}' batch dispatched successfully!`);
+      notify(res.data?.message || `Campaign '${normType}' batch dispatched successfully!`);
       fetchData(false);
     } catch (err) {
       notify(err.response?.data?.detail || `Failed to dispatch ${type} campaign`, 'error');
     } finally {
-      setTriggering(prev => ({ ...prev, [type]: false }));
+      setTriggering(prev => ({ ...prev, [type]: false, [normType]: false }));
     }
   };
 
@@ -635,7 +636,7 @@ const OutboundCampaigns = () => {
                     className="flex-1 py-2.5 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 text-xs font-bold border border-amber-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['no-show'] ? 'animate-spin' : ''}`} />
-                    <span>{triggering['no-show'] ? 'Dispatching...' : 'Run Recovery Batch'}</span>
+                    <span>{triggering['no-show'] ? 'Dispatching...' : 'Run No-Show Recovery'}</span>
                   </button>
 
                   <button
@@ -694,7 +695,7 @@ const OutboundCampaigns = () => {
                     className="flex-1 py-2.5 px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 text-xs font-bold border border-sky-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['recall'] ? 'animate-spin' : ''}`} />
-                    <span>{triggering['recall'] ? 'Dispatching...' : `Run ${recallDays}d Recall Batch`}</span>
+                    <span>{triggering['recall'] ? 'Dispatching...' : 'Run Recall Batch'}</span>
                   </button>
 
                   <button
@@ -743,7 +744,7 @@ const OutboundCampaigns = () => {
                     className="flex-1 py-2.5 px-3 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-400 text-xs font-bold border border-purple-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                   >
                     <Play className={`w-3.5 h-3.5 fill-current ${triggering['survey'] ? 'animate-spin' : ''}`} />
-                    <span>{triggering['survey'] ? 'Dispatching...' : 'Run Survey Batch'}</span>
+                    <span>{triggering['survey'] ? 'Dispatching...' : 'Run Post-Visit Survey'}</span>
                   </button>
 
                   <button
@@ -815,7 +816,7 @@ const OutboundCampaigns = () => {
                   className="flex-1 py-2.5 px-3 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-400 text-xs font-bold border border-teal-500/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
                 >
                   <Play className={`w-3.5 h-3.5 fill-current ${triggering['waitlist'] ? 'animate-spin' : ''}`} />
-                  <span>{triggering['waitlist'] ? 'Dispatching...' : `Fill Open Slot (${waitlistDate} @ ${waitlistTime})`}</span>
+                  <span>{triggering['waitlist'] ? 'Dispatching...' : 'Run Waitlist Backfill'}</span>
                 </button>
 
                 <button
@@ -1213,38 +1214,19 @@ const OutboundCampaigns = () => {
                   </div>
                 )}
 
-                {/* Engine Selector: Instant 1s Ring vs CALL-E Agent */}
+                {/* Engine Selector: CALL-E Hero vs Instant Direct Dial */}
                 <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-on-surface">Telephony Dispatch Engine</label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-on-surface">Telephony Dispatch Engine</label>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">CALL-E Hero Voice Engine</span>
+                  </div>
                   <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSingleEngine('instant')}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        singleEngine === 'instant'
-                          ? 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/30'
-                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
-                          ⚡ Instant Direct Dial
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
-                          1s Ring
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                        Direct Retell / Telnyx SIP ring. Bell rings on your phone within 1-2 seconds.
-                      </p>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => setSingleEngine('calle')}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         singleEngine === 'calle'
-                          ? 'border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/30'
+                          ? 'border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30'
                           : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
                       }`}
                     >
@@ -1252,12 +1234,34 @@ const OutboundCampaigns = () => {
                         <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
                           🤖 CALL-E Agent
                         </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
-                          Hackathon
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                          Hero Engine
                         </span>
                       </div>
                       <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                        Autonomous CALL-E LLM agent with real-time goal planning and structured schema.
+                        Autonomous CALL-E LLM agent with real-time goal planning and structured JSON schema extraction.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSingleEngine('instant')}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        singleEngine === 'instant'
+                          ? 'border-emerald-500 bg-emerald-500/10 ring-2 ring-emerald-500/30'
+                          : 'border-outline/20 bg-surface hover:bg-surface-variant/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                          ⚡ Instant Direct Dial
+                        </span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300">
+                          1s Ring
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                        Direct SIP ring. Bell rings on the recipient phone within 1-2 seconds with fast voice dispatch.
                       </p>
                     </button>
                   </div>

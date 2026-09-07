@@ -14,5 +14,5 @@ out.json
 *check*.py
 *trace*.js
 *test_*.js
-DEMO_SCRIPT*.md
-HACKATHON_*.md
+scratch/
+backend/scratch/

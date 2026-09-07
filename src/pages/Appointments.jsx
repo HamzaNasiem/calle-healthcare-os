@@ -373,15 +373,20 @@ const AppointmentDetailPanel = ({
         <button
           onClick={() => onTriggerConfirmationCall(appointment)}
           disabled={isTriggeringCall}
-          className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#396a00] border border-emerald-200 transition-all cursor-pointer flex items-center gap-1.5"
+          className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#396a00] border border-emerald-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
           title="Place automated CALL-E 24h confirmation call now"
         >
           {isTriggeringCall ? (
-            <Loader className="w-3 h-3 animate-spin" />
+            <>
+              <Loader className="w-3 h-3 animate-spin text-[#396a00]" />
+              <span>Dispatching CALL-E...</span>
+            </>
           ) : (
-            <Bot className="w-3 h-3 text-[#396a00]" />
+            <>
+              <Bot className="w-3 h-3 text-[#396a00]" />
+              <span>Trigger CALL-E Call</span>
+            </>
           )}
-          <span>Trigger CALL-E Call</span>
         </button>
       </div>
 
@@ -900,9 +905,9 @@ const Appointments = () => {
         time_str: timeStr,
         clinic_name: clinic?.name || "Medical Clinic",
         wait_for_completion: false,
-        engine: "instant"
+        engine: "calle"
       });
-      showToast(`🤖 CALL-E 24h confirmation voice call initiated for ${appt.patient_name || 'Patient'}!`, "success");
+      showToast(`🤖 CALL-E Autonomous Voice Agent dispatched for ${appt.patient_name || 'Patient'}!`, "success");
       setTimeout(async () => {
         try {
           const res = await api.get(`/calls?appointment_id=${appt.id}&limit=1`);

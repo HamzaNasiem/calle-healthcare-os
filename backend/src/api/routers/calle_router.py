@@ -41,12 +41,13 @@ from pydantic import BaseModel
 
 from ...core.database import supabase, supabase_read
 from ...core.security import require_permission, AuthenticatedUser, require_role, require_active_subscription
-from ...services.calle_service import calle_service
+from ...services.calle_service import calle_service, PHIScrubberFilter
 from ...services.audit_service import audit_service
 from ...config.settings import settings
 from ...ws.manager import tenant_room_manager
 
 log = logging.getLogger(__name__)
+log.addFilter(PHIScrubberFilter())
 
 # Webhook ingestion endpoints (/webhook, /inbound) are public/signature-verified.
 # Management and campaign routes enforce explicit auth & subscription dependencies.
@@ -63,16 +64,16 @@ class SingleCallRequest(BaseModel):
     patient_id: Optional[str] = None
     patient_name: Optional[str] = None
     phone: str
-    campaign_type: str  # confirmation | no_show | recall | survey | waitlist
+    campaign_type: str  # confirmation | no_show | recall | survey | waitlist | custom
     clinic_name: Optional[str] = None
     time_str: Optional[str] = None
     days_since_last_visit: Optional[int] = 30
     recall_type: Optional[str] = "routine follow-up"
     slot_date: Optional[str] = None
     slot_time: Optional[str] = None
-    region: str = "US"
+    region: Optional[str] = "US"
     wait_for_completion: bool = False
-    engine: Optional[str] = "auto"  # "auto" | "instant" | "retell" | "calle"
+    engine: str = "calle"  # "calle" (default native voice engine) | "instant"
     force: bool = False
     bypass_quiet_hours: bool = False
 
@@ -552,17 +553,17 @@ async def get_campaign_estimates(
         clinic_zone = ZoneInfo(clinic_tz)
     except Exception:
         clinic_zone = ZoneInfo("America/Chicago")
-    now = datetime.now(clinic_zone)
-    today = now.date()
-    tomorrow = (now + timedelta(days=1)).date()
+    now_local = datetime.now(clinic_zone)
+    today_local = now_local.date()
+    tomorrow_local = (now_local + timedelta(days=1)).date()
 
-    # Timezone-aware local ISO bounds for accurate PostgreSQL TIMESTAMPTZ comparison
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=clinic_zone).isoformat()
-    today_end = datetime.combine(today, datetime.max.time(), tzinfo=clinic_zone).isoformat()
-    tomorrow_start = datetime.combine(tomorrow, datetime.min.time(), tzinfo=clinic_zone).isoformat()
-    tomorrow_end = datetime.combine(tomorrow, datetime.max.time(), tzinfo=clinic_zone).isoformat()
-    lookback_48h = (now - timedelta(hours=48)).isoformat()
-    query_now = (now + timedelta(hours=1)).isoformat()
+    # Timezone-aware UTC bounds for accurate PostgreSQL TIMESTAMPTZ comparison
+    today_start = datetime.combine(today_local, datetime.min.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    today_end = datetime.combine(today_local, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    tomorrow_start = datetime.combine(tomorrow_local, datetime.min.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    tomorrow_end = datetime.combine(tomorrow_local, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    lookback_48h = (now_local - timedelta(hours=48)).astimezone(timezone.utc).isoformat()
+    query_now = (now_local + timedelta(hours=1)).astimezone(timezone.utc).isoformat()
 
     counts = {
         "confirmation": 0,
@@ -609,8 +610,8 @@ async def get_campaign_estimates(
     try:
         # 3. Recall (30/60/90 days)
         for threshold, key in [(30, "recall_30"), (60, "recall_60"), (90, "recall_90")]:
-            cutoff = (now - timedelta(days=threshold)).date()
-            cutoff_end = datetime.combine(cutoff, datetime.max.time(), tzinfo=clinic_zone).isoformat()
+            cutoff = (now_local - timedelta(days=threshold)).date()
+            cutoff_end = datetime.combine(cutoff, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
             res_rec = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda c=cutoff_end: supabase_read.table("appointments")
@@ -901,18 +902,44 @@ async def trigger_single_call(
     """
     clinic_id = auth.clinic_id
 
-    # 1. Get clinic name
+    # 1. Get clinic name and settings
+    clinic_name = body.clinic_name or "Your Clinic"
+    clinic_tz = "America/Chicago"
+    clinic_notif_conf = {}
     try:
         clinic_res = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: supabase_read.table("clinics")
-                .select("name")
+                .select("name, timezone, notifications_config")
                 .eq("id", clinic_id)
                 .execute()
         )
-        clinic_name = body.clinic_name or (clinic_res.data[0]["name"] if clinic_res.data else "Your Clinic")
+        if clinic_res.data:
+            c_row = clinic_res.data[0]
+            clinic_name = body.clinic_name or c_row.get("name") or "Your Clinic"
+            clinic_tz = c_row.get("timezone") or "America/Chicago"
+            clinic_notif_conf = c_row.get("notifications_config") or {}
     except Exception:
         clinic_name = body.clinic_name or "Your Clinic"
+
+    # Enforce TCPA quiet hours before triggering outbound call (supports manual override)
+    from ...services.tcpa_service import tcpa_service
+    is_quiet, quiet_reason = tcpa_service.is_quiet_hours(
+        timezone_str=clinic_tz,
+        notifications_config=clinic_notif_conf
+    )
+    is_bypassed = body.force or body.bypass_quiet_hours
+    if is_quiet and not is_bypassed:
+        log.info(f"[SingleCall] {quiet_reason}. Holding outbound call for clinic {clinic_id}.")
+        return {
+            "message": f"Call held: {quiet_reason}. Set force=true or bypass_quiet_hours=true to override for testing.",
+            "record_id": None,
+            "status": "held",
+            "quiet_hours_active": True,
+            "can_override": True,
+        }
+    if is_quiet and is_bypassed:
+        log.warning(f"[SingleCall] TCPA quiet hours bypassed via manual override for clinic {clinic_id}.")
 
     normalized_phone = _normalize_phone_e164(body.phone)
     if not normalized_phone:
@@ -1017,9 +1044,9 @@ async def trigger_single_call(
     idem_key = _build_idempotency_key(body.campaign_type, clinic_id, appointment_id or str(uuid.uuid4()))
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL and not body.wait_for_completion else None
 
-    # 5. Dispatch the right campaign (Instant 1-second Retell SIP vs Autonomous CALL-E)
+    # 5. Dispatch via CALL-E Autonomous Voice Engine
     result = None
-    if body.engine in ("instant", "retell"):
+    if body.engine in ("instant",):
         try:
             from ...services.voice_service import voice_service
             instant_res = await voice_service.make_outbound_call(
@@ -1041,12 +1068,12 @@ async def trigger_single_call(
                     "status": "initiated",
                     "task_completed": False,
                     "completion_confidence": {"score": 1.0, "label": "instant"},
-                    "summary": f"⚡ Instant 1-second call dispatched via Retell AI / Telnyx SIP ({instant_cid}).",
+                    "summary": f"Instant call dispatched ({instant_cid}).",
                 }
             else:
-                log.warning("[SingleCall] Instant engine returned error: %s, falling back to CALL-E", instant_res.get("error"))
+                log.warning("[SingleCall] Secondary engine returned error: %s, falling back to CALL-E", instant_res.get("error"))
         except Exception as e:
-            log.error("[SingleCall] Failed to invoke instant engine: %s", e)
+            log.error("[SingleCall] Secondary engine invoke error: %s", e)
 
     if result is None and body.campaign_type == "confirmation":
         result = await calle_service.confirmation_call(
@@ -1097,11 +1124,19 @@ async def trigger_single_call(
             slot_time=body.slot_time or "10:30 AM",
             idempotency_key=idem_key,
             webhook_url=webhook_url,
-            region=body.region,
+            region=body.region or "US",
             wait_for_completion=body.wait_for_completion,
         )
     elif result is None:
-        raise HTTPException(status_code=400, detail=f"Unknown campaign_type: {body.campaign_type}")
+        # Core generic CALL-E call dispatcher for custom / ad-hoc outreach
+        result = await calle_service.create_call(
+            task=f"You are an AI voice assistant calling on behalf of {clinic_name} regarding campaign {body.campaign_type}.",
+            phone=normalized_phone,
+            idempotency_key=idem_key,
+            webhook_url=webhook_url,
+            region=body.region or "US",
+            wait_for_completion=body.wait_for_completion,
+        )
 
     # 6. Save to DB with strict appointment_id and patient_id linkages
     record_id = await _save_outbound_call(
@@ -1184,7 +1219,7 @@ async def trigger_single_call(
 
     return {
         "record_id": record_id,
-        "calle_call_id": result.get("id"),
+        "calle_call_id": result.get("id") or result.get("call_id"),
         "status": result.get("status"),
         "task_completed": result.get("task_completed"),
         "structured_result": result.get("structured_result"),
@@ -1276,8 +1311,8 @@ async def run_confirmation_campaign(
         log.warning(f"[calle_router] TCPA quiet hours bypassed via manual override for confirmation campaign (clinic {clinic_id}).")
 
     tomorrow = (local_now + timedelta(days=1)).date()
-    tomorrow_start = datetime.combine(tomorrow, datetime.min.time(), tzinfo=clinic_zone).isoformat()
-    tomorrow_end = datetime.combine(tomorrow, datetime.max.time(), tzinfo=clinic_zone).isoformat()
+    tomorrow_start = datetime.combine(tomorrow, datetime.min.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    tomorrow_end = datetime.combine(tomorrow, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
     limit_count = body.limit if (body and body.limit) else 20
 
     try:
@@ -1452,8 +1487,8 @@ async def run_no_show_campaign(
         log.warning(f"[calle_router] TCPA quiet hours bypassed via manual override for no-show campaign (clinic {clinic_id}).")
 
     lookback_hours = body.lookback_hours if (body and body.lookback_hours) else 48
-    window_start = (local_now - timedelta(hours=lookback_hours)).isoformat()
-    window_end = (local_now + timedelta(hours=1)).isoformat()
+    window_start = (local_now - timedelta(hours=lookback_hours)).astimezone(timezone.utc).isoformat()
+    window_end = (local_now + timedelta(hours=1)).astimezone(timezone.utc).isoformat()
     limit_count = body.limit if (body and body.limit) else 15
 
     try:
@@ -1629,6 +1664,7 @@ async def run_recall_campaign(
 
     cutoff_date = (local_now - timedelta(days=req_body.days_threshold)).date()
     cutoff_end_str = cutoff_date.strftime("%Y-%m-%d")
+    cutoff_end_utc = datetime.combine(cutoff_date, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
 
     # 1. Query patients with last_visit_date <= cutoff_end_str
     try:
@@ -1656,7 +1692,7 @@ async def run_recall_campaign(
                     .select("patient_id, patient_name, patient_phone, datetime")
                     .eq("clinic_id", clinic_id)
                     .eq("status", "completed")
-                    .lte("datetime", f"{cutoff_end_str}T23:59:59")
+                    .lte("datetime", cutoff_end_utc)
                     .order("datetime", desc=True)
                     .limit(req_body.limit * 2)
                     .execute()
@@ -1678,13 +1714,13 @@ async def run_recall_campaign(
 
     # 3. Exclude patients who already have an upcoming scheduled appointment
     try:
-        today_str = local_now.date().isoformat()
+        today_start_utc = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
         active_appts = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: supabase_read.table("appointments")
                 .select("patient_id")
                 .eq("clinic_id", clinic_id)
-                .gte("datetime", f"{today_str}T00:00:00")
+                .gte("datetime", today_start_utc)
                 .in_("status", ["scheduled", "pending", "confirmed"])
                 .execute()
         )
@@ -1829,10 +1865,10 @@ async def run_survey_campaign(
 
     today = local_now.date()
     if body and body.lookback_hours:
-        survey_start = (local_now - timedelta(hours=body.lookback_hours)).isoformat()
+        survey_start = (local_now - timedelta(hours=body.lookback_hours)).astimezone(timezone.utc).isoformat()
     else:
-        survey_start = datetime.combine(today, datetime.min.time(), tzinfo=clinic_zone).isoformat()
-    survey_end = datetime.combine(today, datetime.max.time(), tzinfo=clinic_zone).isoformat()
+        survey_start = datetime.combine(today, datetime.min.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
+    survey_end = datetime.combine(today, datetime.max.time(), tzinfo=clinic_zone).astimezone(timezone.utc).isoformat()
     limit_count = body.limit if (body and body.limit) else 20
 
     try:
@@ -2181,17 +2217,25 @@ async def handle_calle_webhook(request: Request):
         task_completed = payload.get("task_completed")
 
     structured_result = call_data.get("structured_result") or call_data.get("structuredResult") or {}
+    if isinstance(structured_result, str):
+        try:
+            structured_result = json.loads(structured_result)
+        except Exception:
+            structured_result = {}
+    elif not isinstance(structured_result, dict):
+        structured_result = {}
+
     summary = call_data.get("summary", "") or payload.get("summary", "")
     confidence = call_data.get("completion_confidence") or call_data.get("completionConfidence") or {}
 
     # Event-type normalization per official CALL-E Webhook specs
     if event_type == "call.result_validation_failed":
-        status = status or "failed"
+        status = "failed"
         task_completed = False
         if not summary:
             summary = "CALL-E result schema validation failed."
     elif event_type == "call.failed":
-        status = status or "failed"
+        status = "failed"
         task_completed = False
         if not summary:
             summary = "CALL-E outbound call failed."
@@ -2263,7 +2307,7 @@ async def handle_calle_webhook(request: Request):
                 or structured_result.get("reschedule_preferred_time")
                 or ""
             )
-            if will_attend in ("yes", "confirmed", "true"):
+            if will_attend in ("yes", "confirmed", "true") and not is_resched:
                 new_status = "confirmed"
                 await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -2275,8 +2319,12 @@ async def handle_calle_webhook(request: Request):
             elif is_resched:
                 new_status = "rescheduled_requested"
                 up_fields = {"status": "rescheduled_requested"}
+                resched_note = "[CALL-E Reschedule Request]"
                 if pref_time:
-                    up_fields["notes"] = f"[CALL-E Reschedule Request] Preferred time: {pref_time}."
+                    resched_note += f" Preferred time: {pref_time}."
+                if structured_result.get("notes"):
+                    resched_note += f" {structured_result.get('notes')}."
+                up_fields["notes"] = resched_note.strip()
                 await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: supabase.table("appointments").update(up_fields).eq("id", appointment_id).execute()
@@ -2377,6 +2425,60 @@ async def handle_calle_webhook(request: Request):
                     "event": "APPOINTMENT_CREATED",
                     "data": new_appt_data
                 })
+
+        elif campaign_type == "survey" and appointment_id and structured_result:
+            nps = (
+                structured_result.get("nps_score")
+                if structured_result.get("nps_score") is not None
+                else (structured_result.get("rating") if structured_result.get("rating") is not None else structured_result.get("score"))
+            )
+            feedback = (
+                structured_result.get("main_feedback")
+                or structured_result.get("feedback")
+                or structured_result.get("notes")
+                or ""
+            )
+            would_rec = structured_result.get("would_recommend", "")
+
+            survey_parts = []
+            if nps is not None and str(nps) != "-1":
+                survey_parts.append(f"NPS: {nps}/10")
+            if feedback:
+                survey_parts.append(f"Feedback: {feedback}")
+            if would_rec and would_rec != "unknown":
+                survey_parts.append(f"Would recommend: {would_rec}")
+
+            survey_notes = f"[CALL-E Post-Visit Survey] {'. '.join(survey_parts)}." if survey_parts else "[CALL-E Post-Visit Survey] Survey completed."
+
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: supabase.table("appointments").update({
+                    "notes": survey_notes,
+                    "followup_sent": True
+                }).eq("id", appointment_id).execute()
+            )
+
+            await tenant_room_manager.broadcast_to_tenant(str(clinic_id), {
+                "event": "APPOINTMENT_UPDATED",
+                "data": {
+                    "id": str(appointment_id),
+                    "notes": survey_notes,
+                    "nps_score": nps if nps is not None and str(nps) != "-1" else None,
+                    "feedback": feedback,
+                    "followup_sent": True
+                }
+            })
+
+        elif campaign_type == "waitlist" and structured_result:
+            accepts_slot = structured_result.get("accepts_slot")
+            if (accepts_slot is True or str(accepts_slot).lower() == "true") and patient_id:
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: supabase.table("waitlist").update({"status": "booked"}).eq("patient_id", patient_id).eq("clinic_id", clinic_id).execute()
+                    )
+                except Exception as wl_sync_err:
+                    log.warning("[CalleWebhook] Waitlist status update note: %s", wl_sync_err)
 
 
         # ── REAL-TIME WEBSOCKET BROADCASTS ──────────────────────────────────

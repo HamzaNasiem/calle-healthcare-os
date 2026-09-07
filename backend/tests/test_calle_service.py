@@ -122,4 +122,81 @@ def test_phone_normalization_e164():
     assert _normalize_phone_e164("5551234567") == "+15551234567"
     assert _normalize_phone_e164("+15551234567") == "+15551234567"
     assert _normalize_phone_e164("03001234567") == "+923001234567"
+    assert _normalize_phone_e164("923001234567") == "+923001234567"
+    assert _normalize_phone_e164("+447911123456") == "+447911123456"
+
+def test_region_and_locale_detection():
+    srv = CalleService()
+    reg, _ = srv._detect_region_and_locale("+923001234567")
+    assert reg == "PK"
+    reg_us, _ = srv._detect_region_and_locale("+14155552671")
+    assert reg_us == "US"
+    reg_gb, _ = srv._detect_region_and_locale("+447911123456")
+    assert reg_gb == "GB"
+    reg_ovr, _ = srv._detect_region_and_locale("+14155552671", region_override="PK")
+    assert reg_ovr == "PK"
+
+def test_phi_scrubber_filter():
+    import logging
+    from src.services.calle_service import PHIScrubberFilter
+    filt = PHIScrubberFilter()
+    rec = logging.LogRecord("phi_test", logging.INFO, "test.py", 1, "Calling patient at +14155552671 or +923001234567 email patient@clinic.com", (), None)
+    filt.filter(rec)
+    assert "+14155552671" not in rec.msg
+    assert "+923001234567" not in rec.msg
+    assert "patient@clinic.com" not in rec.msg
+    assert "[PHI_REDACTED]" in rec.msg
+
+def test_hipaa_task_text_scrubbed():
+    srv = CalleService()
+    script = srv._build_noshow_script("10:00 AM", "Bytelytic Clinic")
+    assert "John Doe" not in script
+    assert "Patient" not in script
+    assert "CALL-E" in script
+
+@pytest.mark.asyncio
+async def test_create_call_fire_and_forget():
+    srv = CalleService()
+    srv._is_dry_run = MagicMock(return_value=True)
+    res = await srv.create_call(
+        task="Test prompt",
+        phone="+923001234567",
+        wait_for_completion=False,
+    )
+    assert res["status"] == "queued"
+    assert res["task_completed"] is False
+    assert str(res["id"]).startswith("call_")
+
+@pytest.mark.asyncio
+async def test_create_call_wait_for_completion():
+    srv = CalleService()
+    srv._is_dry_run = MagicMock(return_value=True)
+    res = await srv.create_call(
+        task="Test prompt",
+        phone="+923001234567",
+        wait_for_completion=True,
+    )
+    assert res["status"] == "completed"
+    assert res["task_completed"] is True
+    assert str(res["id"]).startswith("call_")
+    assert "structured_result" in res
+
+def test_live_sdk_call_payload_format(service):
+    from src.services.calle_service import CONFIRMATION_SCHEMA
+    service.client.calls.create.return_value = {"id": "call_live_789", "status": "queued"}
+    res = service._sync_create_fire_and_forget(
+        task="Verify attendance.",
+        phone="+923001234567",
+        result_schema=CONFIRMATION_SCHEMA,
+        idempotency_key="key_live_format",
+        region="PK"
+    )
+    assert res["status"] == "queued"
+    assert res["id"] == "call_live_789"
+    service.client.calls.create.assert_called_once()
+    _, kwargs = service.client.calls.create.call_args
+    assert kwargs["task"] == "Verify attendance."
+    assert kwargs["recipients"] == [{"phones": ["+923001234567"], "region": "PK"}]
+    assert kwargs["idempotency_key"] == "key_live_format"
+    assert kwargs["result_schema"] == CONFIRMATION_SCHEMA
 

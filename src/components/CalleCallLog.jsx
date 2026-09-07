@@ -16,6 +16,7 @@ import {
   Calendar,
   User,
   ShieldCheck,
+  Volume2,
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -199,6 +200,7 @@ export const CalleCallLog = ({
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Key Extracted Outcome</th>
                 <th className="py-3 px-4">Confidence</th>
+                <th className="py-3 px-4">Duration</th>
                 <th className="py-3 px-4">CALL-E ID</th>
                 <th className="py-3 px-4">Timestamp</th>
                 <th className="py-3 px-4 text-right">Inspect</th>
@@ -271,6 +273,16 @@ export const CalleCallLog = ({
                             ({c.completion_label || 'high'})
                           </span>
                         </span>
+                      ) : (
+                        <span className="text-on-surface-variant/40">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-3.5 px-4 font-mono text-[11px] text-on-surface-variant">
+                      {c.duration_seconds !== null && c.duration_seconds !== undefined ? (
+                        <span>{Math.floor(c.duration_seconds / 60)}m {c.duration_seconds % 60}s</span>
+                      ) : c.duration ? (
+                        <span>{c.duration}s</span>
                       ) : (
                         <span className="text-on-surface-variant/40">—</span>
                       )}
@@ -378,11 +390,39 @@ export const CalleCallLog = ({
                 </pre>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {selectedCall.recording_url && (
+                <div className="p-3.5 rounded-xl bg-surface-variant/40 border border-outline/10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-on-surface flex items-center gap-1.5">
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Authentic Call Audio Recording
+                    </span>
+                    <a
+                      href={selectedCall.recording_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-emerald-400 hover:underline"
+                    >
+                      Raw Audio Source ↗
+                    </a>
+                  </div>
+                  <audio controls className="w-full h-8 rounded-lg" src={selectedCall.recording_url} />
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/5">
                   <p className="text-on-surface-variant">CALL-E ID</p>
-                  <p className="font-mono text-on-surface font-semibold truncate mt-0.5">
+                  <p className="font-mono text-on-surface font-semibold truncate mt-0.5" title={selectedCall.calle_call_id || selectedCall.id}>
                     {selectedCall.calle_call_id || selectedCall.id || 'N/A'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/5">
+                  <p className="text-on-surface-variant">Duration</p>
+                  <p className="font-semibold text-emerald-400 mt-0.5">
+                    {selectedCall.duration_seconds !== null && selectedCall.duration_seconds !== undefined
+                      ? `${Math.floor(selectedCall.duration_seconds / 60)}m ${selectedCall.duration_seconds % 60}s`
+                      : selectedCall.duration ? `${selectedCall.duration}s` : 'N/A'}
                   </p>
                 </div>
                 <div className="p-3 rounded-xl bg-surface-variant/30 border border-outline/5">
