@@ -103,16 +103,17 @@ class RetellVoiceConnector(BaseVoiceConnector):
         await retell_breaker.call(_execute)
 
     async def make_outbound_call(self, from_number: str, to_number: str, agent_id: str, call_type: str, dynamic_variables: dict) -> str:
+        clean_vars = {
+            str(k): (str(v) if v is not None else "")
+            for k, v in {"call_type": str(call_type), **(dynamic_variables or {})}.items()
+        }
         async def _execute():
             call = await anyio.to_thread.run_sync(
                 lambda: self._create_phone_call(
                     from_number=from_number,
                     to_number=to_number,
                     override_agent_id=agent_id,
-                    retell_llm_dynamic_variables={
-                        "call_type": call_type,
-                        **dynamic_variables
-                    }
+                    retell_llm_dynamic_variables=clean_vars
                 )
             )
             return call.call_id

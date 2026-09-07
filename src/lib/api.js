@@ -52,13 +52,82 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Flag — ek hi baar refresh try karo, loop avoid karo
+let isRefreshing = false;
+let refreshQueue = [];
+
+const processQueue = (error, token = null) => {
+  refreshQueue.forEach(({ resolve, reject }) => {
+    if (error) reject(error);
+    else resolve(token);
+  });
+  refreshQueue = [];
+};
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const originalRequest = error.config;
     const status = error.response?.status;
+
+    if (
+      status === 401 &&
+      originalRequest &&
+      !originalRequest._retried &&
+      !originalRequest.url?.includes('/auth/login') &&
+      !originalRequest.url?.includes('/auth/refresh')
+    ) {
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          refreshQueue.push({ resolve, reject });
+        }).then((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retried = true;
+      isRefreshing = true;
+
+      try {
+        const refreshToken = getRefreshToken();
+        if (!refreshToken) throw new Error('No refresh token');
+
+        const refreshRes = await axios.post(
+          `${API_URL}/auth/refresh`,
+          { refresh_token: refreshToken }
+        );
+        const newToken = refreshRes.data?.token;
+        const newRefreshToken = refreshRes.data?.refreshToken;
+
+        if (newToken) {
+          const usesLocal = !!localStorage.getItem('sb-token');
+          const store = usesLocal ? localStorage : sessionStorage;
+          store.setItem('sb-token', newToken);
+          if (newRefreshToken) store.setItem('sb-refresh-token', newRefreshToken);
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          processQueue(null, newToken);
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        clearAuth();
+        if (
+          typeof window !== 'undefined' &&
+          window.location.pathname !== '/login' &&
+          window.location.pathname !== '/forgot-password'
+        ) {
+          window.location.href = '/login';
+        }
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
     if (status === 401) {
-      clearAuth();
       if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        clearAuth();
         window.location.href = '/login';
       }
     }

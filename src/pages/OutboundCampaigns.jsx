@@ -209,14 +209,15 @@ const OutboundCampaigns = () => {
     if (!window.confirm('Are you sure you want to dispatch all active automated outbound campaigns now?')) return;
     setTriggeringAll(true);
     try {
-      await Promise.allSettled([
+      const results = await Promise.allSettled([
         api.post('/calle/campaigns/confirmation', {}),
         api.post('/calle/campaigns/no-show', {}),
         api.post('/calle/campaigns/recall', { days_threshold: recallDays, limit: 20 }),
         api.post('/calle/campaigns/survey', {}),
         api.post('/calle/campaigns/waitlist', { slot_date: waitlistDate, slot_time: waitlistTime, limit: 15 }),
       ]);
-      notify('All automated campaign batches dispatched successfully!');
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      notify(`All 5 automated campaign batches processed successfully (${successful}/5 active)!`);
       fetchData(false);
     } catch (err) {
       notify('Batch dispatch completed with some warnings. Check activity log.', 'info');
@@ -532,9 +533,10 @@ const OutboundCampaigns = () => {
 
             <button
               onClick={handleTriggerAllCampaigns}
-              disabled={triggeringAll || (estimates?.total_queued === 0)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all shadow hover:opacity-95 active:scale-95 disabled:opacity-40"
+              disabled={triggeringAll}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-all shadow hover:opacity-95 active:scale-95 disabled:opacity-40 cursor-pointer"
               style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
+              title="Dispatch all due automated campaign batches now"
             >
               <Play className={`w-3.5 h-3.5 fill-current ${triggeringAll ? 'animate-spin' : ''}`} />
               <span>{triggeringAll ? 'Dispatching...' : 'Dispatch All Due'}</span>

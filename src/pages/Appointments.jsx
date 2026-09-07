@@ -891,7 +891,7 @@ const Appointments = () => {
     }
     setIsTriggeringCall(true);
     try {
-      const timeStr = appt.datetime ? fmtClinicTime(appt.datetime, timezone) : "your scheduled time";
+      const timeStr = appt.datetime ? fmtClinicTime(appt.datetime, clinicTz) : "your scheduled time";
       const res = await api.post("/calle/calls/single", {
         phone: appt.patient_phone,
         campaign_type: "confirmation",

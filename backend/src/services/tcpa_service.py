@@ -8,7 +8,7 @@ Enforces Telephone Consumer Protection Act (TCPA) compliance rules:
    - Clinics can define custom quiet hours (e.g. 9:00 PM to 8:00 AM).
    - TCPA boundaries (8:00 AM - 9:00 PM) act as hard federal ceilings.
 3. Timezone Awareness:
-   - Evaluates local time based on the clinic's or recipient's IANA timezone.
+   - Evaluates local time based on the clinic's or recipient's IANA timezone (defaults to America/Chicago).
 """
 
 import datetime
@@ -33,13 +33,13 @@ def parse_time_parts(time_str: str, default_hour: int, default_minute: int = 0) 
 
 class TcpaComplianceService:
     def get_local_time(self, timezone_str: Optional[str] = None) -> datetime.datetime:
-        """Resolves current local datetime for a clinic's timezone with safe fallbacks."""
-        tz_name = timezone_str or "America/New_York"
+        """Resolves current local datetime for a clinic's timezone with safe fallbacks (default America/Chicago)."""
+        tz_name = timezone_str or "America/Chicago"
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
             try:
-                tz = ZoneInfo("America/New_York")
+                tz = ZoneInfo("America/Chicago")
             except Exception:
                 tz = datetime.timezone.utc
         return datetime.datetime.now(tz)
