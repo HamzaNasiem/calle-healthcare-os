@@ -287,7 +287,11 @@ const OutboundCampaigns = () => {
 
       const res = await api.post('/calle/calls/single', payload);
       setSingleResult(res.data);
-      notify(`Test call executed! Status: ${res.data?.status || 'completed'}`);
+      if (res.data?.warning) {
+        notify('CALL-E trial quota limit reached — simulated HA fallback engaged with structured extraction!', 'info');
+      } else {
+        notify(`CALL-E call executed! Status: ${res.data?.status || 'completed'}`);
+      }
       fetchData(false);
     } catch (err) {
       notify(err.response?.data?.detail || 'Failed to execute test call', 'error');
@@ -983,6 +987,16 @@ const OutboundCampaigns = () => {
                     Status: {singleResult.status}
                   </span>
                 </div>
+
+                {singleResult.warning && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-amber-200">CALL-E Daily Trial Quota Active</p>
+                      <p className="text-[11px] text-amber-300/80 leading-relaxed">{singleResult.warning}</p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2 text-xs">
                   <p className="text-on-surface-variant">

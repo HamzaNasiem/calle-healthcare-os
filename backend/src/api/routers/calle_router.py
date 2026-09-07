@@ -1229,6 +1229,8 @@ async def trigger_single_call(
         "completion_score": result.get("completion_confidence", {}).get("score") if isinstance(result.get("completion_confidence"), dict) else None,
         "completion_label": result.get("completion_confidence", {}).get("label") if isinstance(result.get("completion_confidence"), dict) else None,
         "dry_run": calle_service.is_dry_run(),
+        "warning": result.get("warning"),
+        "plan_limit_reached": result.get("plan_limit_reached", False),
     }
 
 
