@@ -1,10 +1,13 @@
 node_modules
 dist
+dist/
 .env
 .env.*
 !.env.example
 .vercel
 __pycache__
+**/__pycache__/
+*.pyc
 .pytest_cache
 .ruff_cache
 .venv

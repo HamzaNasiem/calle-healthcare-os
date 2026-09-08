@@ -118,10 +118,6 @@ def test_get_integrations_status_connected(client):
         # Check Twilio
         assert data["data"]["twilio"]["connected"] is True
         
-        # Check Retell
-        assert data["data"]["retell"]["connected"] is True
-        assert data["data"]["retell"]["agent_id"] == "agent_1234567890"
-        
         # Check CALL-E
         assert data["data"]["calle"]["connected"] is True
         assert "••••••" in data["data"]["calle"]["api_key_masked"]
@@ -162,7 +158,6 @@ def test_get_integrations_status_disconnected(client):
         assert data["data"]["google_calendar"]["connected"] is False
         assert data["data"]["telnyx"]["connected"] is False
         assert data["data"]["calle"]["connected"] is False
-        assert data["data"]["retell"]["connected"] is False
 
 
 def test_update_integrations_settings(client):

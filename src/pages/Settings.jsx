@@ -2622,7 +2622,116 @@ const Settings = () => {
                 </div>
               </div>
 
-              {/* INTEGRATION 1: GOOGLE CALENDAR OAUTH */}
+              {/* INTEGRATION 1: CALL-E AI AUTONOMOUS VOICE ENGINE — PRIMARY */}
+              <div className="p-5 rounded-2xl border-2 border-primary/30 bg-gradient-to-br from-primary-container/20 via-surface-container to-surface-container space-y-4 shadow-sm relative overflow-hidden">
+                {/* Subtle background glow */}
+                <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative">
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <div className="w-11 h-11 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0 border-2 border-primary/25 relative">
+                      <Bot className="w-6 h-6 text-primary" />
+                      {/* Live pulse indicator */}
+                      <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary flex items-center justify-center">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-on-surface">CALL-E Autonomous Voice Engine</h4>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-primary text-on-primary uppercase tracking-wider">
+                          Primary Engine
+                        </span>
+                        {isCalleConnected ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#edf7e0] text-[#396a00] border border-[#d4edba]">
+                            <CheckCircle2 className="w-3 h-3" /> iams_live_018f7d9a (Active)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">
+                            <AlertCircle className="w-3 h-3" /> Configured
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-on-surface-variant mt-0.5 max-w-lg">
+                        Goal-driven autonomous phone agent executing 24h appointment confirmations, 30/60/90-day care recalls, 2h no-show recovery campaigns, and payor IVR prior authorizations — powered by the native CALL-E Voice SDK.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
+                    <button
+                      onClick={() => handleTestIntegration('calle')}
+                      disabled={testingService === 'calle'}
+                      className="px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 text-xs font-semibold text-primary flex items-center gap-1.5 transition-colors"
+                    >
+                      {testingService === 'calle' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                      <span>Test CALL-E</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('agent_builder')}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-on-primary bg-primary hover:opacity-90 shadow-sm flex items-center gap-1.5 transition-all active:scale-[0.98]"
+                    >
+                      <Bot className="w-3.5 h-3.5" />
+                      <span>Configure Agent</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Inline Test Result Banner */}
+                {testResult && testResult.service === 'calle' && (
+                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1 ${
+                    testResult.success ? "bg-[#edf7e0] text-[#396a00] border border-[#d4edba]" : "bg-[#fce4ec] text-[#b71c1c] border border-[#ffcdd2]"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      {testResult.success ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                      <span>{testResult.message}</span>
+                    </div>
+                    <button onClick={() => setTestResult(null)} className="opacity-70 hover:opacity-100 font-bold px-1.5 py-0.5">✕</button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-primary/15 relative">
+                  <div>
+                    <label className="overline mb-1.5 block">Engine Version</label>
+                    <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
+                      <code className="text-xs text-on-surface flex-1 font-mono truncate">
+                        calle-ai v0.6.0 (Live SDK)
+                      </code>
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant mt-1">Goal-driven phone task engine with JSON Schema validation.</p>
+                  </div>
+
+                  <div>
+                    <label className="overline mb-1.5 block">CALL-E Terminal Webhook URL</label>
+                    <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
+                      <code className="text-xs text-on-surface flex-1 font-mono truncate">{webhookUrl}</code>
+                      <button
+                        onClick={() => handleCopy(webhookUrl, "calle_webhook")}
+                        className="text-on-surface-variant hover:text-primary transition-colors flex-shrink-0 p-1"
+                        title="Copy Webhook URL"
+                      >
+                        {copiedKey === "calle_webhook" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant mt-1">Configured for instant call result sync to PostgreSQL database.</p>
+                  </div>
+
+                  <div>
+                    <label className="overline mb-1.5 block">Active Campaigns</label>
+                    <div className="flex flex-col gap-1">
+                      {["24h Confirm", "2h No-Show", "60d Recall", "IVR Auth"].map((c) => (
+                        <div key={c} className="flex items-center gap-2 text-[11px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                          <span className="text-on-surface-variant">{c}</span>
+                          <span className="ml-auto font-bold text-primary text-[10px]">ENABLED</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* INTEGRATION 2: GOOGLE CALENDAR OAUTH */}
               <div className="p-5 rounded-2xl bg-surface-container border border-surface-container space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start sm:items-center gap-3.5">
@@ -2887,86 +2996,9 @@ const Settings = () => {
                 </div>
               </div>
 
-              {/* INTEGRATION 4: CALL-E AI VOICE ENGINE */}
-              <div className="p-5 rounded-2xl bg-surface-container border border-surface-container space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start sm:items-center gap-3.5">
-                    <div className="w-11 h-11 bg-primary-container/30 rounded-xl flex items-center justify-center flex-shrink-0 border border-primary/20">
-                      <Bot className="w-6 h-6 text-primary" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-bold text-on-surface">CALL-E AI Phone Engine</h4>
-                        {isCalleConnected ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#edf7e0] text-[#396a00] border border-[#d4edba]">
-                            <CheckCircle2 className="w-3 h-3" /> iams_live_018f7d9a (Active)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#fef3c7] text-[#92400e] border border-[#fde68a]">
-                            <AlertCircle className="w-3 h-3" /> Configured
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-on-surface-variant mt-0.5">
-                        Autonomous phone agent for appointment confirmations, 30/60/90-day recalls, and no-show follow-ups.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <button
-                      onClick={() => handleTestIntegration('calle')}
-                      disabled={testingService === 'calle'}
-                      className="px-3 py-1.5 rounded-lg border border-surface-container-highest bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface flex items-center gap-1.5 transition-colors"
-                    >
-                      {testingService === 'calle' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-500" />}
-                      <span>Test CALL-E</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Inline Test Result Banner */}
-                {testResult && testResult.service === 'calle' && (
-                  <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1 ${
-                    testResult.success ? "bg-[#edf7e0] text-[#396a00] border border-[#d4edba]" : "bg-[#fce4ec] text-[#b71c1c] border border-[#ffcdd2]"
-                  }`}>
-                    <div className="flex items-center gap-2">
-                      {testResult.success ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
-                      <span>{testResult.message}</span>
-                    </div>
-                    <button onClick={() => setTestResult(null)} className="opacity-70 hover:opacity-100 font-bold px-1.5 py-0.5">✕</button>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-surface-container-high/60">
-                  <div>
-                    <label className="overline mb-1.5 block">CALL-E Engine Mode</label>
-                    <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
-                      <code className="text-xs text-on-surface flex-1 font-mono truncate">
-                        calle-ai v0.6.0 (Live SDK)
-                      </code>
-                    </div>
-                    <p className="text-[11px] text-on-surface-variant mt-1">Goal-driven phone task engine with JSON Schema validation.</p>
-                  </div>
-
-                  <div>
-                    <label className="overline mb-1.5 block">CALL-E Terminal Webhook URL</label>
-                    <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
-                      <code className="text-xs text-on-surface flex-1 font-mono truncate">{webhookUrl}</code>
-                      <button
-                        onClick={() => handleCopy(webhookUrl, "calle_webhook")}
-                        className="text-on-surface-variant hover:text-primary transition-colors flex-shrink-0 p-1"
-                        title="Copy Webhook URL"
-                      >
-                        {copiedKey === "calle_webhook" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-on-surface-variant mt-1">Configured for instant call result sync to PostgreSQL database.</p>
-                  </div>
-                </div>
-              </div>
 
               {/* INTEGRATION 5: STRIPE BILLING & SUBSCRIPTION */}
+
               <div className="p-5 rounded-2xl bg-surface-container border border-surface-container space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start sm:items-center gap-3.5">
@@ -3773,20 +3805,20 @@ const Settings = () => {
                 <span className="text-xs text-on-surface flex-1">Database Layer</span>
                 <span className="text-[0.625rem] font-bold text-[#396a00]">Active</span>
               </div>
-              
+
+              <div className="flex items-center gap-3 py-2">
+                <span className={`w-1.5 h-1.5 rounded-full ${isCalleConnected ? "bg-[#396a00]" : "bg-[#e89e00]"}`} />
+                <span className="text-xs text-on-surface flex-1 font-semibold">CALL-E Engine</span>
+                <span className={`text-[0.625rem] font-bold ${isCalleConnected ? "text-[#396a00]" : "text-[#8a5f00]"}`}>
+                  {isCalleConnected ? "Active" : "Ready"}
+                </span>
+              </div>
+
               <div className="flex items-center gap-3 py-2">
                 <span className={`w-1.5 h-1.5 rounded-full ${isGoogleConnected ? "bg-[#396a00]" : "bg-[#e89e00]"}`} />
                 <span className="text-xs text-on-surface flex-1">Google Calendar</span>
                 <span className={`text-[0.625rem] font-bold ${isGoogleConnected ? "text-[#396a00]" : "text-[#8a5f00]"}`}>
                   {isGoogleConnected ? "Active" : "Not Linked"}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-3 py-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${isCalleConnected ? "bg-[#396a00]" : "bg-[#e89e00]"}`} />
-                <span className="text-xs text-on-surface flex-1">CALL-E Engine</span>
-                <span className={`text-[0.625rem] font-bold ${isCalleConnected ? "text-[#396a00]" : "text-[#8a5f00]"}`}>
-                  {isCalleConnected ? "Active" : "Ready"}
                 </span>
               </div>
 

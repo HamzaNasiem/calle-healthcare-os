@@ -283,18 +283,22 @@ const OutboundCampaigns = () => {
         slot_time: singleSlotTime,
         wait_for_completion: singleWaitForResult,
         engine: singleEngine,
+        bypass_quiet_hours: true,
+        force: true,
       };
 
       const res = await api.post('/calle/calls/single', payload);
       setSingleResult(res.data);
-      if (res.data?.warning) {
-        notify('CALL-E trial quota limit reached — simulated HA fallback engaged with structured extraction!', 'info');
+      if (res.data?.status === 'failed') {
+        const errorReason = res.data?.error || res.data?.reason || res.data?.message || res.data?.detail || 'Call dispatch failed';
+        notify(`Call failed: ${errorReason}`, 'error');
       } else {
         notify(`CALL-E call executed! Status: ${res.data?.status || 'completed'}`);
       }
       fetchData(false);
     } catch (err) {
-      notify(err.response?.data?.detail || 'Failed to execute test call', 'error');
+      const errorMsg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to execute test call';
+      notify(errorMsg, 'error');
     } finally {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
@@ -384,6 +388,33 @@ const OutboundCampaigns = () => {
           <span>{notification.msg}</span>
         </div>
       )}
+
+      {/* ── Engine Status Banner ───────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-xs font-semibold shadow-xs">
+        <div className="flex items-center gap-3">
+          <span className="flex h-3 w-3 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-600"></span>
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-extrabold text-sm text-emerald-950 tracking-tight">
+              🟢 CALL-E Autonomous Engine: Live Mode
+            </span>
+            <span className="hidden sm:inline text-emerald-500">•</span>
+            <span className="text-emerald-800/90 font-medium">
+              Direct Autonomous Telephony Dispatch
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="px-2.5 py-1 rounded-lg bg-white text-emerald-900 font-mono text-[11px] font-bold border border-emerald-300 shadow-2xs">
+            API v{statusInfo?.api_version || '0.6.0'}
+          </span>
+          <span className="px-2.5 py-1 rounded-lg bg-emerald-700 text-white text-[11px] font-bold shadow-xs">
+            READY
+          </span>
+        </div>
+      </div>
 
       {/* ── Header Hero Banner ─────────────────────────────────────────────── */}
       <div className="card p-6 sm:p-8 border border-[#edf1ef] relative overflow-hidden shadow-card bg-white">
@@ -973,23 +1004,45 @@ const OutboundCampaigns = () => {
               <div className="space-y-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef] p-4">
                 <div className="flex items-center justify-between border-b border-[#edf1ef] pb-3">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-[#396a00]" />
+                    {singleResult.status === 'failed' ? (
+                      <AlertCircle className="w-5 h-5 text-red-600" />
+                    ) : (
+                      <CheckCircle2 className="w-5 h-5 text-[#396a00]" />
+                    )}
                     <h4 className="font-extrabold text-[#181c1c] text-sm">
-                      {singleResult.status === 'initiated' || singleResult.status === 'running' || singleResult.status === 'queued'
+                      {singleResult.status === 'failed'
+                        ? 'Call Dispatch Failed'
+                        : singleResult.status === 'initiated' || singleResult.status === 'running' || singleResult.status === 'queued'
                         ? 'Call Dispatched & Ringing'
                         : 'Call Completed & Extracted'}
                     </h4>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    singleResult.status === 'failed'
+                      ? 'bg-red-100 text-red-800 border border-red-200'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}>
                     Status: {singleResult.status}
                   </span>
                 </div>
+
+                {(singleResult.status === 'failed' || singleResult.error || singleResult.reason) && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-900 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-red-950">Dispatch Error</p>
+                      <p className="text-[11px] text-red-900/90 leading-relaxed">
+                        {singleResult.error || singleResult.reason || singleResult.message || 'Call failed to dispatch.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {singleResult.warning && (
                   <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2.5">
                     <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
-                      <p className="font-bold text-amber-950">CALL-E Daily Trial Quota Active</p>
+                      <p className="font-bold text-amber-950">Engine Notice</p>
                       <p className="text-[11px] text-amber-900/90 leading-relaxed">{singleResult.warning}</p>
                     </div>
                   </div>
@@ -1225,57 +1278,24 @@ const OutboundCampaigns = () => {
                   </div>
                 )}
 
-                {/* Engine Selector: CALL-E Hero vs Instant Direct Dial */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-[#181c1c]">Telephony Dispatch Engine</label>
-                    <span className="text-[10px] font-extrabold text-[#396a00] uppercase tracking-wider">CALL-E Hero Voice Engine</span>
+                {/* Telephony Dispatch Engine: Pure CALL-E */}
+                <div className="p-3.5 rounded-xl border border-[#396a00]/30 bg-emerald-50/50 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#181c1c] flex items-center gap-1.5">
+                        🤖 CALL-E Autonomous Voice Agent
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Primary Hackathon Engine
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#3d4946] leading-relaxed">
+                      Powered by the official <code className="text-[#396a00] font-mono text-[10px] bg-emerald-100/60 px-1 py-0.5 rounded">calle-ai</code> SDK with autonomous task planning and structured JSON schema extraction.
+                    </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setSingleEngine('calle')}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        singleEngine === 'calle'
-                          ? 'border-[#396a00] bg-emerald-50/70 ring-2 ring-[#396a00]/20'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-[#181c1c] flex items-center gap-1.5">
-                          🤖 CALL-E Agent
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          Hero Engine
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#3d4946] leading-relaxed font-medium">
-                        Autonomous CALL-E LLM agent with real-time goal planning and structured JSON schema extraction.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setSingleEngine('instant')}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        singleEngine === 'instant'
-                          ? 'border-[#396a00] bg-emerald-50/70 ring-2 ring-[#396a00]/20'
-                          : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-[#181c1c] flex items-center gap-1.5">
-                          ⚡ Instant Direct Dial
-                        </span>
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-                          1s Ring
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-[#3d4946] leading-relaxed font-medium">
-                        Direct SIP ring. Bell rings on the recipient phone within 1-2 seconds with fast voice dispatch.
-                      </p>
-                    </button>
-                  </div>
+                  <span className="text-[10px] font-extrabold text-[#396a00] bg-white px-2 py-1 rounded-lg border border-emerald-200 shadow-sm shrink-0">
+                    API v0.6.0
+                  </span>
                 </div>
 
                 <div className="p-3 rounded-xl bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between">

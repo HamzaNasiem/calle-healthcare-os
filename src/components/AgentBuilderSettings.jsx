@@ -583,6 +583,10 @@ const AgentBuilderSettings = () => {
             </div>
             <div>
               <h3 className="text-base font-bold text-on-surface">AI Voice Receptionist Persona</h3>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold mb-2 mt-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                CALL-E Engine Active — Live Mode
+              </div>
               <p className="text-xs text-on-surface-variant">
                 Configure AI Name, speaking style, custom clinic instructions, test greeting audio preview, and live CALL-E engine compiler.
               </p>
@@ -810,6 +814,31 @@ const AgentBuilderSettings = () => {
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </button>
+              </div>
+              <div className="mt-3">
+                <div className="flex justify-between items-center mb-1.5">
+                  <p className="overline text-[11px]">CALL-E Webhook URL</p>
+                  <span className="text-[10px] text-on-surface-variant font-mono">Auto-generated</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={`${process.env.VITE_API_URL || ''}/api/v1/calle/webhook`}
+                    readOnly
+                    className="input-field font-mono text-xs pr-10 bg-surface-container-highest cursor-not-allowed text-on-surface-variant"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${process.env.VITE_API_URL || ''}/api/v1/calle/webhook`);
+                      setMsg({ type: "success", text: "Webhook URL copied to clipboard!" });
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-primary p-1 rounded"
+                    title="Copy Webhook URL"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

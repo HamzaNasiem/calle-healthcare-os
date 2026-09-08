@@ -27,6 +27,24 @@ All call outcomes are extracted via strict JSON schemas and written bidirectiona
 
 ---
 
+## 🤖 Powered by CALL-E Autonomous Voice Engine
+
+Bytelytic Clinic OS uses [CALL-E](https://heycall-e.com) as its exclusive autonomous voice agent engine for all outbound patient communication:
+
+| Workflow | CALL-E Method | Trigger |
+|---|---|---|
+| Appointment Confirmation | `calle_service.confirmation_call()` | 24h before appointment |
+| No-Show Recovery | `calle_service.no_show_recovery_call()` | Patient misses appointment |
+| Patient Recall | `calle_service.recall_call()` | 30/60/90 days since last visit |
+| Waitlist Fill | `calle_service.waitlist_fill_call()` | Appointment cancelled |
+| Prior Auth Follow-up | `calle_service.prior_auth_call()` | PA pending >5 days |
+| Post-Visit Survey | `calle_service.post_visit_survey_call()` | Day after visit |
+
+**CALL-E API Key:** Configure `CALLE_API_KEY` in `backend/.env`
+**Live Mode:** Set `CALLE_DRY_RUN=false` in `backend/.env`
+
+---
+
 ## 🚀 Live Deployments & Demo Access
 
 | Service | Environment | Status | Public URL / Endpoint |
@@ -305,14 +323,16 @@ Configure `.env` in the `backend/` directory using the provided `backend/.env.ex
 | `CALLE_BASE_URL` | **Voice AI Engine** | No | Base URL for CALL-E API (default: `https://api.heycall-e.com`). |
 | `CALLE_WEBHOOK_SECRET`| **Voice AI Engine** | No | HMAC key for verifying incoming CALL-E call completion webhooks. |
 | `CALLE_DRY_RUN` | **Voice AI Engine** | No | Set to `false` for live real phone dispatches, `true` for dry run simulation. |
+| `OPENROUTER_API_KEY` | **AI & LLM Services**| No | OpenRouter API key for clinical NLP intent parsing and fallback completions. |
+| `OPENAI_API_KEY` | **AI & LLM Services**| No | OpenAI API key for clinical intent parsing and conversation analysis. |
 | `DATABASE_URL` | **Persistence** | **Yes** | PostgreSQL 16 connection string (`postgresql+asyncpg://...`). |
 | `AUDIT_DATABASE_URL` | **Compliance** | **Yes** | Dedicated audit log PostgreSQL database for HIPAA CFR § 164.312(b). |
 | `JWT_PRIVATE_KEY` | **Security** | **Yes** | RSA-2048 private key for signing clinical staff JWT session tokens. |
 | `JWT_PUBLIC_KEY` | **Security** | **Yes** | RSA-2048 public key for verifying JWT tokens across microservices. |
 | `ENCRYPTION_KEY` | **Security** | **Yes** | Base64-encoded 256-bit symmetric key for AES-256-GCM PHI column encryption. |
-| `TELNYX_API_KEY` | **Telephony Carrier**| **Yes** | Carrier API key for SIP trunk transport and transactional patient SMS. |
-| `TELNYX_PUBLIC_KEY` | **Telephony Carrier**| **Yes** | Ed25519 public key for verifying inbound carrier webhooks. |
-| `TELNYX_DEFAULT_NUMBER`| **Telephony Carrier**| **Yes** | Provisioned clinic caller-ID telephone number in E.164 format. |
+| `TELNYX_API_KEY` | **Telephony Carrier**| Optional | Optional carrier key for physical inbound DID trunking and SMS. Outbound calling is handled natively by CALL-E. |
+| `TELNYX_PUBLIC_KEY` | **Telephony Carrier**| Optional | Ed25519 public key for verifying inbound carrier webhooks. |
+| `TELNYX_DEFAULT_NUMBER`| **Telephony Carrier**| Optional | Default clinic caller-ID telephone number in E.164 format. |
 
 ---
 
@@ -438,6 +458,20 @@ curl -X POST https://calle-healthcare-os.onrender.com/api/v1/calle/webhook \
     }
   }'
 ```
+
+---
+
+## 🏆 CALL-E Hackathon Submission & Community Contribution
+
+This project is created for the **CALL-E: Your Code Is Calling** Hackathon ($10,000 Prize Pool, September 2026).
+
+### 🌟 Awesome Phone Call Agents Pull Request
+In compliance with the official hackathon submission requirements:
+- **Upstream Repository:** [`CALLE-AI/awesome-phone-call-agents`](https://github.com/CALLE-AI/awesome-phone-call-agents)
+- **Application Directory:** [`applications/bytelytic-clinic-os/`](applications/bytelytic-clinic-os/README.md)
+- **Submission Title:** `Bytelytic Clinic OS — Autonomous Clinical Voice AI Receptionist`
+- **Target Category:** **Most Practical Use Case ($4,000)** / **Best Overall Voice Agent**
+- **Pull Request Status:** Submitted with verified application directory, schema definitions, live demo links, and documentation.
 
 ---
 

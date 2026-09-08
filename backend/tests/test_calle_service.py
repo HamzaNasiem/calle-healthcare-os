@@ -71,8 +71,45 @@ def test_api_failure_handled(service):
     res = service.place_confirmation_call("+15551234567", "Test Clinic", "10:00 AM", "key1")
     assert res["status"] == "failed"
     assert res["task_completed"] is False
-    assert "API error" in res["summary"]
+    assert "api error" in res["summary"].lower()
     assert res["evidence"]["error"] == "API Timeout"
+
+def test_quota_limit_returns_honest_error(service):
+    """Verify rate limit / plan limit returns honest failed payload instead of deceptive call_quota_ mock."""
+    service.client.calls.create_and_wait.side_effect = Exception("429 Too Many Requests: Plan limit exceeded")
+    res = service.place_confirmation_call("+15551234567", "Test Clinic", "10:00 AM", "key_quota")
+    assert res["id"] is None
+    assert res["status"] == "failed"
+    assert res["task_completed"] is False
+    assert res["completion_confidence"]["label"] == "error"
+    assert res["completion_confidence"]["score"] == 0.0
+    assert "CALL-E API Error:" in res["summary"]
+
+def test_fire_and_forget_quota_limit_returns_honest_error(service):
+    """Verify fire-and-forget does not generate fake call_quota_ on rate limit."""
+    service.client.calls.create.side_effect = Exception("429 Too Many Requests: Plan limit exceeded")
+    res = service._sync_create_fire_and_forget(
+        task="Test prompt",
+        phone="+15551234567",
+        result_schema={},
+        idempotency_key="key_ff_quota",
+    )
+    assert res["id"] is None
+    assert res["status"] == "failed"
+    assert res["task_completed"] is False
+    assert res["completion_confidence"]["label"] == "error"
+    assert res["completion_confidence"]["score"] == 0.0
+    assert "CALL-E API Error:" in res["summary"]
+
+def test_list_goals_no_fake_colonoscopy_goals(service):
+    """Verify list_goals does not return hardcoded colonoscopy/AWV goals when unconfigured or empty."""
+    srv = CalleService()
+    srv._is_dry_run = MagicMock(return_value=True)
+    import asyncio
+    res = asyncio.run(srv.list_goals())
+    assert res["object"] == "list"
+    assert res["data"] == []
+    assert "No custom goals are currently published" in res.get("message", "")
 
 @pytest.mark.asyncio
 async def test_awaitable_dict_compat_async(service):

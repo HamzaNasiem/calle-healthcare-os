@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 import datetime
+import json
 import re
+import uuid
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 
@@ -742,18 +744,21 @@ async def handle_voice_chat(
             if pat_res and pat_res.data:
                 pat_id = pat_res.data.get("id") if isinstance(pat_res.data, dict) else pat_res.data[0].get("id")
             else:
+                new_pat_id = str(uuid.uuid4())
                 new_pat = supabase.table("patients").insert({
+                    "id": new_pat_id,
                     "clinic_id": clinic_id,
                     "name": pat_name,
                     "phone": phone,
                     "insurance_provider": "Self-Pay",
                     "created_at": now.isoformat()
                 }).execute()
-                if new_pat.data:
-                    pat_id = new_pat.data.get("id") if isinstance(new_pat.data, dict) else new_pat.data[0].get("id")
+                pat_id = (new_pat.data.get("id") if isinstance(new_pat.data, dict) else (new_pat.data[0].get("id") if (isinstance(new_pat.data, list) and len(new_pat.data) > 0) else new_pat_id)) if (new_pat and new_pat.data) else new_pat_id
 
             # Create real appointment in database
-            appt_insert = supabase.table("appointments").insert({
+            new_appt_id = str(uuid.uuid4())
+            appt_payload = {
+                "id": new_appt_id,
                 "clinic_id": clinic_id,
                 "patient_id": pat_id,
                 "patient_name": pat_name,
@@ -765,45 +770,48 @@ async def handle_voice_chat(
                 "booked_by": "ai",
                 "notes": f"Booked live via {agent_name} Voice Simulator ({user_msg[:60]})",
                 "created_at": now.isoformat()
-            }).execute()
+            }
+            appt_insert = supabase.table("appointments").insert(appt_payload).execute()
 
-            if appt_insert.data:
-                appt_data = appt_insert.data if isinstance(appt_insert.data, dict) else appt_insert.data[0]
-                action = "appointment_booked"
+            if appt_insert and appt_insert.data:
+                appt_data = appt_insert.data if isinstance(appt_insert.data, dict) else (appt_insert.data[0] if (isinstance(appt_insert.data, list) and len(appt_insert.data) > 0) else appt_payload)
+            else:
+                appt_data = appt_payload
+            action = "appointment_booked"
 
-                # Invalidate cache & broadcast WebSocket
+            # Invalidate cache & broadcast WebSocket
+            try:
+                from ...core.cache import local_cache
+                local_cache.delete(f"dashboard_stats_{clinic_id}")
                 try:
-                    from ...core.cache import local_cache
-                    local_cache.delete(f"dashboard_stats_{clinic_id}")
-                    try:
-                        from ...ws.manager import tenant_room_manager, WebSocketEvent
-                    except ImportError:
-                        from src.ws.manager import tenant_room_manager, WebSocketEvent
-                    import asyncio
-                    asyncio.create_task(tenant_room_manager.broadcast_event(
-                        str(clinic_id),
-                        WebSocketEvent.APPOINTMENT_ADDED,
-                        appt_data
-                    ))
-                except Exception:
-                    pass
+                    from ...ws.manager import tenant_room_manager, WebSocketEvent
+                except ImportError:
+                    from src.ws.manager import tenant_room_manager, WebSocketEvent
+                import asyncio
+                asyncio.create_task(tenant_room_manager.broadcast_event(
+                    str(clinic_id),
+                    WebSocketEvent.APPOINTMENT_ADDED,
+                    appt_data
+                ))
+            except Exception:
+                pass
 
-                # Trigger real-time SMS booking confirmation
-                try:
-                    from ...services.sms_service import sms_service
-                    import asyncio
-                    asyncio.create_task(sms_service.send_booking_confirmation(
-                        phone=phone,
-                        time_str=formatted_date,
-                        provider_name=doctor_name,
-                        clinic_id=clinic_id,
-                        patient_name=pat_name,
-                        appointment_id=appt_data.get("id"),
-                        patient_id=pat_id,
-                        clinic_name=clinic_name,
-                    ))
-                except Exception as sms_err:
-                    log.warning(f"[voice_chat] SMS trigger warning: {sms_err}")
+            # Trigger real-time SMS booking confirmation
+            try:
+                from ...services.sms_service import sms_service
+                import asyncio
+                asyncio.create_task(sms_service.send_booking_confirmation(
+                    phone=phone,
+                    time_str=formatted_date,
+                    provider_name=doctor_name,
+                    clinic_id=clinic_id,
+                    patient_name=pat_name,
+                    appointment_id=appt_data.get("id"),
+                    patient_id=pat_id,
+                    clinic_name=clinic_name,
+                ))
+            except Exception as sms_err:
+                log.warning(f"[voice_chat] SMS trigger warning: {sms_err}")
 
             if lang == "es":
                 reply = f"¡Perfecto! He reservado su cita con {doctor_name} para el {formatted_date}. La cita ha sido confirmada y registrada en nuestro sistema clínico."
@@ -817,8 +825,8 @@ async def handle_voice_chat(
     # Intelligent LLM Conversational Voice Receptionist via AIService
     else:
         try:
-            from src.services.ai_service import AIService
-            ai_service = AIService()
+            from ...services.ai_service import ai_service, AIService
+            ai_svc = ai_service or AIService()
             system_prompt = (
                 f"You are {agent_name}, the autonomous voice AI medical receptionist for {clinic_name} in {city}. "
                 f"The primary clinician is {doctor_name} ({specialty}). "
@@ -829,7 +837,7 @@ async def handle_voice_chat(
                 f"If they ask if you can hear them, confirm clearly that you can hear them loud and clear. "
                 f"Answer in Spanish if the user's language is Spanish, otherwise English."
             )
-            llm_reply = await ai_service.chat([
+            llm_reply = await ai_svc.chat([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg}
             ], max_tokens=150, temperature=0.5)

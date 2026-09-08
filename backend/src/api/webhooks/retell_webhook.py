@@ -19,6 +19,13 @@ from ...core.cache import local_cache
 from ...core.logger import log
 from ...services.audit_service import audit_service
 
+# ============================================================
+# DEPRECATED ROUTE — retell_webhook
+# This router is no longer registered in api/router.py.
+# CALL-E webhooks are handled by: /api/v1/calle/webhook
+# This file is kept for reference only. DO NOT import.
+# ============================================================
+
 router = APIRouter(prefix="/webhooks/retell", tags=["Webhooks"])
 
 async def get_clinic_id_by_agent_id(agent_id: str) -> Optional[str]:

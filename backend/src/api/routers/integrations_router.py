@@ -87,6 +87,7 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "status_label": "Active" if twilio_connected else "Not Configured",
     }
 
+    # CALL-E is the sole voice engine for this clinic OS
     # 4. CALL-E AI Voice Engine
     raw_calle_key = _decrypt_calle_key(clinic.get("calle_api_key_enc"))
     if not raw_calle_key:
@@ -103,17 +104,6 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "mode": "live" if (has_calle and not getattr(settings, "CALLE_DRY_RUN", False)) else "dry_run",
         "webhook_url": f"{webhook_base}/calle/webhook",
         "status_label": f"Active ({calle_masked})" if (has_calle and calle_masked) else ("Live Active" if has_calle else "Unconfigured"),
-    }
-
-    # 5. Retell AI
-    agent_id = clinic.get("retell_agent_id") or ""
-    retell_connected = bool(agent_id and len(agent_id.strip()) > 0)
-    retell_status = {
-        "connected": retell_connected,
-        "agent_id": agent_id,
-        "status": "active" if retell_connected else "unprovisioned",
-        "webhook_url": f"{webhook_base}/webhooks/retell/",
-        "status_label": "Live Active" if retell_connected else "Not Built",
     }
 
     # 6. Stripe Billing
@@ -137,7 +127,6 @@ def _build_status_response(clinic: Dict[str, Any]) -> Dict[str, Any]:
         "telnyx": telnyx_status,
         "twilio": twilio_status,
         "calle": calle_status,
-        "retell": retell_status,
         "stripe": stripe_status,
     }
 
@@ -149,7 +138,7 @@ async def get_integrations_status(
 ):
     """
     Fetch comprehensive live connection statuses for all clinic integrations:
-    Google Calendar, Telnyx, Twilio, Retell AI, and Stripe.
+    Google Calendar, Telnyx, Twilio, and Stripe.
     """
     clinic_id = auth.clinic_id
     try:

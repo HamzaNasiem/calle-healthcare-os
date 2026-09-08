@@ -3,7 +3,6 @@ from typing import Dict, Any
 
 from ..core.database import supabase
 from ..core.config import settings
-from .voice_service import voice_service
 
 def _days_since_last_visit(patient: dict) -> int:
     last_visit = patient.get("last_visit_date")
@@ -161,16 +160,16 @@ class RecallService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    async def process_recall_outcome(self, clinic_id: str, retell_call_id: str, outcome: str) -> Dict[str, Any]:
+    async def process_recall_outcome(self, clinic_id: str, calle_call_id: str, outcome: str) -> Dict[str, Any]:
         try:
-            res = supabase.table("calls").select("id, appointment_id, patient_id, clinic_id").eq("retell_call_id", retell_call_id).single().execute()
+            res = supabase.table("calls").select("id, appointment_id, patient_id, clinic_id").eq("call_id", calle_call_id).single().execute()
             call = res.data
             if not call:
-                raise Exception(f"Call {retell_call_id} not found")
+                raise Exception(f"Call {calle_call_id} not found")
                 
             resolved_clinic_id = clinic_id or call.get("clinic_id")
             
-            supabase.table("calls").update({"outcome": outcome}).eq("retell_call_id", retell_call_id).execute()
+            supabase.table("calls").update({"outcome": outcome}).eq("call_id", calle_call_id).execute()
             
             if outcome == "booked" and call.get("appointment_id") and resolved_clinic_id:
                 clinic_res = supabase.table("clinics").select("monthly_revenue_per_visit").eq("id", resolved_clinic_id).single().execute()

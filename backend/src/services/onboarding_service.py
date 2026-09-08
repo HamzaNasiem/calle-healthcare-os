@@ -5,7 +5,6 @@ import re
 from typing import Dict, Any
 
 from ..core.database import supabase
-from .voice_service import voice_service
 from .phonenumber_service import phonenumber_service
 from .email_service import email_service
 
@@ -28,7 +27,7 @@ class OnboardingService:
         Orchestrates the Zero-Touch SaaS Onboarding Flow.
         1. Create Auth User (sign_up + auto-confirm via admin)
         2. Create Clinic Record with ALL fields
-        3. Attempt Provisioning (Best-effort — phone number + Retell agent)
+        3. Attempt Provisioning (Best-effort — phone number + CALL-E voice agent)
         4. Send Welcome Email (non-blocking)
         """
         DEFAULT_HOURS = {
@@ -146,7 +145,7 @@ class OnboardingService:
 
             # ── Step 3: Provisioning (Deferred under Lazy Model A) ────
             clinic["phone_number"] = None
-            clinic["retell_agent_id"] = None
+            clinic["calle_enabled"] = True
 
             # ── Step 4: Welcome email (best-effort) ────────────────────────
             try:

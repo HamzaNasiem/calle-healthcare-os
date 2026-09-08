@@ -4,7 +4,7 @@ from typing import Dict, Any
 
 from ..core.database import supabase
 from .ai_service import ai_service
-from .voice_service import voice_service
+from .calle_service import calle_service
 from .sms_service import sms_service
 
 class NoshowService:
@@ -169,26 +169,31 @@ Return a JSON array only (no markdown):
                 return {"success": True, "data": {"filled": False, "reason": "no_waitlist_candidates"}}
                 
             for patient in patients:
-                call_res = await voice_service.make_outbound_call(
-                    clinic_id=clinic_id,
-                    phone=patient["phone"],
-                    call_type="recall",
-                    data={
-                        "patientId": patient["id"],
-                        "patientName": patient["name"],
-                        "slotDatetime": slot,
-                        "message": "slot_available"
-                    }
-                )
-                
-                if call_res.get("success"):
-                    print(f"[noshow.fill_from_waitlist] clinicId={clinic_id} patientId={patient['id']} callId={call_res['data']['callId']}")
+                import uuid as _uuid
+                _idem = f"waitlist_fill_{patient['id']}_{_uuid.uuid4().hex[:8]}"
+                try:
+                    call_res = await calle_service.waitlist_fill_call(
+                        phone=patient["phone"],
+                        clinic_name="Medical Clinic",
+                        patient_name=patient["name"],
+                        appointment_type="Follow-up",
+                        offered_slot=slot,
+                        idempotency_key=_idem,
+                        wait_for_completion=False
+                    )
+                except Exception as _ce:
+                    print(f"[noshow.fill_from_waitlist] CALL-E error for patientId={patient['id']}: [PHI_REDACTED]")
+                    call_res = None
+
+                if call_res and call_res.get("id"):
+                    call_id = call_res.get("id") or "calle_active"
+                    print(f"[noshow.fill_from_waitlist] clinicId={clinic_id} patientId={patient['id']} calleCallId={call_id}")
                     return {
                         "success": True,
                         "data": {
                             "filled": True,
                             "patientId": patient["id"],
-                            "callId": call_res["data"]["callId"]
+                            "callId": call_id
                         }
                     }
             

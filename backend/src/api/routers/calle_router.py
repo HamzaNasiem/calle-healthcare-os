@@ -75,7 +75,7 @@ class SingleCallRequest(BaseModel):
     wait_for_completion: bool = False
     engine: str = "calle"  # "calle" (default native voice engine) | "instant"
     force: bool = False
-    bypass_quiet_hours: bool = False
+    bypass_quiet_hours: bool = True
 
 
 class ConfirmationCampaignRequest(BaseModel):
@@ -182,7 +182,7 @@ def _build_idempotency_key(campaign_type: str, clinic_id: str, ref_id: str, date
     """Deterministic, unique per clinic + campaign + reference entity per day."""
     if not date_str:
         date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    return f"CALL_{campaign_type.upper()}_{clinic_id[:8]}_{ref_id}_{date_str}"
+    return f"call_{campaign_type.lower()}_{clinic_id[:8]}_{ref_id}_{date_str}"
 
 
 async def _save_outbound_call(
@@ -1044,113 +1044,99 @@ async def trigger_single_call(
     idem_key = _build_idempotency_key(body.campaign_type, clinic_id, appointment_id or str(uuid.uuid4()))
     webhook_url = f"{settings.API_BASE_URL}/api/v1/calle/webhook" if settings.API_BASE_URL and not body.wait_for_completion else None
 
-    # 5. Dispatch via CALL-E Autonomous Voice Engine
+    # 5. Dispatch exclusively via CALL-E Autonomous Voice Engine
     result = None
-    if body.engine in ("instant",):
-        try:
-            from ...services.voice_service import voice_service
-            instant_res = await voice_service.make_outbound_call(
-                clinic_id=clinic_id,
-                phone=normalized_phone,
-                call_type=body.campaign_type,
-                data={
-                    "patientName": patient_name or "Valued Patient",
-                    "patientId": patient_id,
-                    "appointmentId": appointment_id,
-                    "timeStr": time_str or "your scheduled appointment"
-                }
-            )
-            if instant_res.get("success"):
-                instant_cid = instant_res.get("data", {}).get("callId")
-                result = {
-                    "id": instant_cid,
-                    "call_id": instant_cid,
-                    "status": "initiated",
-                    "task_completed": False,
-                    "completion_confidence": {"score": 1.0, "label": "instant"},
-                    "summary": f"Instant call dispatched ({instant_cid}).",
-                }
-            else:
-                log.warning("[SingleCall] Secondary engine returned error: %s, falling back to CALL-E", instant_res.get("error"))
-        except Exception as e:
-            log.error("[SingleCall] Secondary engine invoke error: %s", e)
 
-    if result is None and body.campaign_type == "confirmation":
-        result = await calle_service.confirmation_call(
-            phone=normalized_phone,
-            clinic_name=clinic_name,
-            time_str=time_str or "tomorrow at 10:30 AM",
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region,
-            wait_for_completion=body.wait_for_completion,
-        )
-    elif result is None and body.campaign_type == "no_show":
-        result = await calle_service.no_show_recovery_call(
-            phone=normalized_phone,
-            clinic_name=clinic_name,
-            patient_name=body.patient_name or "Valued Patient",
-            time_str=time_str or "today's appointment time",
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region,
-            wait_for_completion=body.wait_for_completion,
-        )
-    elif result is None and body.campaign_type == "recall":
-        result = await calle_service.recall_call(
-            phone=normalized_phone,
-            clinic_name=clinic_name,
-            days_since_last_visit=body.days_since_last_visit or 30,
-            recall_type=body.recall_type or "routine follow-up",
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region,
-            wait_for_completion=body.wait_for_completion,
-        )
-    elif result is None and body.campaign_type == "survey":
-        result = await calle_service.post_visit_survey_call(
-            phone=normalized_phone,
-            clinic_name=clinic_name,
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region,
-            wait_for_completion=body.wait_for_completion,
-        )
-    elif result is None and body.campaign_type == "waitlist":
-        result = await calle_service.waitlist_fill_call(
-            phone=normalized_phone,
-            clinic_name=clinic_name,
-            slot_date=body.slot_date or (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%A, %B %d"),
-            slot_time=body.slot_time or "10:30 AM",
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region or "US",
-            wait_for_completion=body.wait_for_completion,
-        )
-    elif result is None:
-        # Core generic CALL-E call dispatcher for custom / ad-hoc outreach
-        result = await calle_service.create_call(
-            task=f"You are an AI voice assistant calling on behalf of {clinic_name} regarding campaign {body.campaign_type}.",
-            phone=normalized_phone,
-            idempotency_key=idem_key,
-            webhook_url=webhook_url,
-            region=body.region or "US",
-            wait_for_completion=body.wait_for_completion,
-        )
+    try:
+        if result is None and body.campaign_type == "confirmation":
+            result = await calle_service.confirmation_call(
+                phone=normalized_phone,
+                clinic_name=clinic_name,
+                time_str=time_str or "tomorrow at 10:30 AM",
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region,
+                wait_for_completion=body.wait_for_completion,
+            )
+        elif result is None and body.campaign_type == "no_show":
+            result = await calle_service.no_show_recovery_call(
+                phone=normalized_phone,
+                clinic_name=clinic_name,
+                patient_name=body.patient_name or "Valued Patient",
+                time_str=time_str or "today's appointment time",
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region,
+                wait_for_completion=body.wait_for_completion,
+            )
+        elif result is None and body.campaign_type == "recall":
+            result = await calle_service.recall_call(
+                phone=normalized_phone,
+                clinic_name=clinic_name,
+                days_since_last_visit=body.days_since_last_visit or 30,
+                recall_type=body.recall_type or "routine follow-up",
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region,
+                wait_for_completion=body.wait_for_completion,
+            )
+        elif result is None and body.campaign_type == "survey":
+            result = await calle_service.post_visit_survey_call(
+                phone=normalized_phone,
+                clinic_name=clinic_name,
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region,
+                wait_for_completion=body.wait_for_completion,
+            )
+        elif result is None and body.campaign_type == "waitlist":
+            result = await calle_service.waitlist_fill_call(
+                phone=normalized_phone,
+                clinic_name=clinic_name,
+                slot_date=body.slot_date or (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%A, %B %d"),
+                slot_time=body.slot_time or "10:30 AM",
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region or "US",
+                wait_for_completion=body.wait_for_completion,
+            )
+        elif result is None:
+            # Core generic CALL-E call dispatcher for custom / ad-hoc outreach
+            result = await calle_service.create_call(
+                task=f"You are an AI voice assistant calling on behalf of {clinic_name} regarding campaign {body.campaign_type}.",
+                phone=normalized_phone,
+                idempotency_key=idem_key,
+                webhook_url=webhook_url,
+                region=body.region or "US",
+                wait_for_completion=body.wait_for_completion,
+            )
+    except Exception as call_err:
+        log.error("[SingleCall] Call creation exception: %s", call_err)
+        result = {
+            "id": None,
+            "status": "failed",
+            "task_completed": False,
+            "error": str(call_err),
+            "summary": f"CALL-E call creation failed: {call_err}",
+        }
 
     # 6. Save to DB with strict appointment_id and patient_id linkages
-    record_id = await _save_outbound_call(
-        clinic_id=clinic_id,
-        campaign_type=body.campaign_type,
-        result=result,
-        appointment_id=appointment_id,
-        patient_id=patient_id,
-        idempotency_key=idem_key,
-        phone=normalized_phone,
-    )
+    record_id = None
+    try:
+        record_id = await _save_outbound_call(
+            clinic_id=clinic_id,
+            campaign_type=body.campaign_type,
+            result=result or {},
+            appointment_id=appointment_id,
+            patient_id=patient_id,
+            idempotency_key=idem_key,
+            phone=normalized_phone,
+        )
+    except Exception as save_err:
+        log.warning("[SingleCall] Failed to persist outbound call record: %s", save_err)
 
     # 7. If wait_for_completion was true and call succeeded immediately, update downstream appointment status
-    if body.wait_for_completion and result.get("status") == "completed" and appointment_id:
+    if body.wait_for_completion and result and result.get("status") == "completed" and appointment_id:
         struct_res = result.get("structured_result") or {}
         will_attend = str(struct_res.get("will_attend", "")).lower().strip()
         resched_req = struct_res.get("reschedule_request")
@@ -1201,9 +1187,10 @@ async def trigger_single_call(
                 }
             })
 
-    if result.get("status") == "failed":
-        err_detail = result.get("error") or result.get("summary") or "Call creation rejected by CALL-E API"
-        raise HTTPException(status_code=400, detail=err_detail)
+    if not result or result.get("status") == "failed" or (result.get("error") and result.get("status") not in ("completed", "queued", "initiated", "running")):
+        err_detail = (result.get("error") if result else None) or (result.get("summary") if result else None) or "Call creation rejected by CALL-E API"
+        log.error("[SingleCall] Outbound call failed: %s", err_detail)
+        raise HTTPException(status_code=400, detail=f"Outbound call failed: {err_detail}")
 
     # HIPAA Audit log (no PHI)
     await audit_service.log(

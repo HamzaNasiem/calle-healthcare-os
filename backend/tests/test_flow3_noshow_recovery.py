@@ -37,9 +37,17 @@ async def test_post_no_show_recovery_endpoint():
     # Provide direct mock appointments via patch instead of mocking supabase chain
     mock_appts = [{"id": "test_id", "patient_id": "p1", "patient_phone": "+15551234567", "patient_name": "Emily", "datetime": "2026-08-31T08:30:00+00:00", "appointment_type": "initial"}]
     with patch("src.api.routers.calle_router.asyncio.get_event_loop") as mock_loop:
+        call_count = 0
         async def mock_run(*args, **kwargs):
+            nonlocal call_count
             mock_res = MagicMock()
-            mock_res.data = mock_appts
+            if call_count == 0:
+                mock_res.data = [{"name": "Oakridge Physical Therapy", "timezone": "America/Chicago"}]
+            elif call_count == 1:
+                mock_res.data = mock_appts
+            else:
+                mock_res.data = []
+            call_count += 1
             return mock_res
         mock_loop.return_value.run_in_executor = mock_run
         
@@ -51,7 +59,7 @@ async def test_post_no_show_recovery_endpoint():
                     mock_auth.user_id = "test_user"
                     mock_auth.email = "test@test.com"
                     with patch("src.api.routers.calle_router.audit_service.log"):
-                        res = await run_no_show_campaign(background_tasks=mock_bg, auth=mock_auth)
+                        res = await run_no_show_campaign(background_tasks=mock_bg, auth=mock_auth, force=True)
                         assert res["queued"] == 1
                         # execute the background task
                         batch_func = mock_bg.add_task.call_args[0][0]

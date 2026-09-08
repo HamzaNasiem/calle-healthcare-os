@@ -257,6 +257,60 @@ const Dashboard = () => {
   const [isListening, setIsListening] = useState(false);
   const [isBotTyping, setIsBotTyping] = useState(false);
   const recognitionRef = useRef(null);
+  const activeUtteranceRef = useRef(null);
+
+  // Cancel any active bot speech synthesis immediately (Instant Barge-In)
+  const cancelSpeech = useCallback(() => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    activeUtteranceRef.current = null;
+  }, []);
+
+  // Reliable Text-to-Speech with persistent utterance ref and barge-in support
+  const speakText = useCallback((text, lang = "en-US") => {
+    if (!("speechSynthesis" in window) || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      // Select matching natural voice if available in browser
+      const voices = window.speechSynthesis.getVoices();
+      const targetLang = lang.split("-")[0];
+      const matchingVoice =
+        voices.find(
+          (v) =>
+            v.lang.startsWith(targetLang) &&
+            (v.name.includes("Natural") || v.name.includes("Google") || v.name.includes("Samantha"))
+        ) || voices.find((v) => v.lang.startsWith(targetLang));
+      if (matchingVoice) {
+        utterance.voice = matchingVoice;
+      }
+
+      utterance.onend = () => {
+        activeUtteranceRef.current = null;
+      };
+      utterance.onerror = (e) => {
+        if (e.error !== "canceled" && e.error !== "interrupted") {
+          console.warn("[SpeechSynthesis] Voice playback warning:", e);
+        }
+        activeUtteranceRef.current = null;
+      };
+
+      // Retain reference to prevent Chromium garbage collection abort mid-utterance
+      activeUtteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn("[SpeechSynthesis] Initialization error:", err);
+    }
+  }, []);
 
   /* ─── Fetch Timeline Analytics ─────────────────────────────── */
   const fetchTimeline = useCallback(async (days) => {
@@ -359,6 +413,18 @@ const Dashboard = () => {
     }
   }, [setCacheItem]);
 
+  /* ─── Cleanup Speech on Unmount ─── */
+  useEffect(() => {
+    return () => {
+      cancelSpeech();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+    };
+  }, [cancelSpeech]);
+
   /* ─── Simulator Bot Response ─── */
   const handleBotResponse = useCallback(async (userText) => {
     setIsBotTyping(true);
@@ -386,25 +452,16 @@ const Dashboard = () => {
       setSimLines((prev) => [...prev, { type: "bot", text: `CALL-E AI: ${reply}` }]);
       setIsBotTyping(false);
 
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(reply);
-        utterance.lang = language === "es" ? "es-MX" : "en-US";
-        window.speechSynthesis.speak(utterance);
-      }
+      // Reliable voice utterance output with persistent ref
+      speakText(reply, language === "es" ? "es-MX" : "en-US");
     } catch (err) {
       console.warn("[VoiceSim] Fallback handling:", err);
       const fallbackReply = "I have recorded your request and our clinic receptionist will follow up shortly.";
       setSimLines((prev) => [...prev, { type: "bot", text: `CALL-E AI: ${fallbackReply}` }]);
       setIsBotTyping(false);
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(fallbackReply);
-        utterance.lang = language === "es" ? "es-MX" : "en-US";
-        window.speechSynthesis.speak(utterance);
-      }
+      speakText(fallbackReply, language === "es" ? "es-MX" : "en-US");
     }
-  }, [language, fetchDashboard]);
+  }, [language, fetchDashboard, speakText]);
 
   const startListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -413,36 +470,37 @@ const Dashboard = () => {
       return;
     }
     try {
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      cancelSpeech(); // Barge-In: Kill bot speech the moment user activates mic
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.lang = language === "es" ? "es-MX" : "en-US";
       rec.interimResults = true;
 
       rec.onstart = () => {
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-        }
+        cancelSpeech(); // Barge-In: Stop speech upon mic activation
         setIsListening(true);
       };
+      rec.onsoundstart = () => {
+        // Fast Barge-In: Kill bot speech the moment any audio signal reaches mic
+        cancelSpeech();
+      };
       rec.onspeechstart = () => {
-        // Instant Barge-In: Kill bot speech the moment user speaks
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-        }
+        // Instant Barge-In: Kill bot speech the moment user begins talking
+        cancelSpeech();
       };
       rec.onerror = (e) => {
-        console.error("Speech recognition error:", e);
+        if (e.error !== "no-speech") {
+          console.warn("[SpeechRecognition] Warning:", e.error);
+        }
+        if (e.error === "not-allowed") {
+          alert("Microphone permission was denied. Please allow microphone access in your browser or type your message in the chat box.");
+        }
         setIsListening(false);
       };
       rec.onend = () => setIsListening(false);
       rec.onresult = (event) => {
         // Cancel bot speech immediately upon any recognized speech
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-        }
+        cancelSpeech();
         const lastResult = event.results[event.results.length - 1];
         if (lastResult.isFinal) {
           const speechToText = lastResult[0].transcript;
@@ -474,11 +532,13 @@ const Dashboard = () => {
     if (isListening) {
       stopListening();
     } else {
+      cancelSpeech(); // Barge-in
       startListening();
     }
   };
 
   const startSimulator = () => {
+    cancelSpeech();
     setSimLines([]);
     setSimDuration(0);
     setInputText("");
@@ -493,27 +553,21 @@ const Dashboard = () => {
         ? "¡Hola! Gracias por llamar a la clínica. Mi nombre es CALL-E, su asistente de voz inteligente. ¿En qué le puedo colaborar hoy?"
         : "Hello! Thank you for calling our clinic. My name is CALL-E, your autonomous AI receptionist. How may I assist you today?";
       setSimLines([{ type: "bot", text: `CALL-E AI: ${greeting}` }]);
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(greeting);
-        utterance.lang = language === "es" ? "es-MX" : "en-US";
-        window.speechSynthesis.speak(utterance);
-      }
-    }, 1200);
+      speakText(greeting, language === "es" ? "es-MX" : "en-US");
+    }, 1000);
   };
 
   const endSimulator = useCallback(() => {
     setSimState("idle");
     setShowSimulator(false);
     stopListening();
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-  }, [stopListening]);
+    cancelSpeech();
+  }, [stopListening, cancelSpeech]);
 
   const handleSendText = (e) => {
     e.preventDefault();
     if (!inputText.trim()) return;
+    cancelSpeech(); // Barge-In: Kill bot speech if user types and submits
     const text = inputText;
     setSimLines((prev) => [...prev, { type: "user", text: `You: ${text}` }]);
     setInputText("");
@@ -801,7 +855,7 @@ const Dashboard = () => {
             className="btn-primary px-3.5 py-2 text-xs font-bold flex items-center gap-1.5 shadow-md hover:scale-[1.02] transition-transform"
           >
             <Mic className="w-3.5 h-3.5" />
-            <span>Test Voice AI</span>
+            <span>Test Voice AI Receptionist</span>
           </button>
         </div>
       </div>
@@ -818,7 +872,7 @@ const Dashboard = () => {
             className="btn-secondary px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 bg-surface-container-lowest hover:bg-surface-container"
           >
             <Bot className="w-3.5 h-3.5 text-[#396a00]" />
-            1-Click Voice Sandbox
+            Voice Receptionist Simulator
           </button>
 
           <button
@@ -846,6 +900,52 @@ const Dashboard = () => {
             Open Calendar
             <ArrowUpRight className="w-3 h-3 ml-0.5" />
           </Link>
+        </div>
+      </div>
+
+      {/* ── CALL-E Dual Voice Telephony Architecture Breakdown ── */}
+      <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl p-3.5 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-outline-variant/20">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <h2 className="text-xs font-bold text-on-surface uppercase tracking-wider">
+              CALL-E Dual Voice Telephony Architecture
+            </h2>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+            Native Voice Agent SDK + OpenRouter LLM
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/30 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5">
+              <PhoneIncoming className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-on-surface text-xs">Inbound Reception Assistant</span>
+                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 uppercase">Interactive</span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant mt-1 leading-relaxed">
+                Interactive conversational booking assistant powered by Browser Speech + OpenRouter LLM (and live clinic VoIP lines). Handles incoming patient calls, clinical FAQ answering, provider availability checks, and live EHR appointment synchronization.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/30 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center flex-shrink-0 text-cyan-600 dark:text-cyan-400 mt-0.5">
+              <PhoneOutgoing className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-on-surface text-xs">Outbound Campaigns Engine</span>
+                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 uppercase">CALL-E SDK</span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant mt-1 leading-relaxed">
+                Autonomous voice calling engine powered by the native CALL-E Autonomous Voice Agent SDK. Executes automated batch campaigns: 24h appointment confirmations, 2h post-no-show recoveries, 60d care recalls, and payor IVR prior authorizations.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1229,7 +1329,7 @@ const Dashboard = () => {
       {/* ── WEB CALL SANDBOX SIMULATOR MODAL ── */}
       {showSimulator && (
         <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-surface-container border border-outline-variant p-6 rounded-2xl max-w-md w-full shadow-2xl flex flex-col gap-4 relative overflow-hidden">
+          <div className="bg-surface-container border border-outline-variant p-6 rounded-2xl max-w-lg w-full shadow-2xl flex flex-col gap-4 relative overflow-hidden">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-outline-variant/65 pb-3">
               <div className="flex items-center gap-2.5">
@@ -1238,10 +1338,14 @@ const Dashboard = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-on-surface text-sm">
-                    {language === "es" ? "Simulador de Agente de Voz CALL-E" : "CALL-E Voice AI Receptionist Simulator"}
+                    {language === "es"
+                      ? "Simulador Interactivo de Recepcionista CALL-E (Voz de Navegador + OpenRouter LLM)"
+                      : "CALL-E Interactive Receptionist Simulator (Browser Speech + OpenRouter LLM)"}
                   </h3>
                   <p className="text-[10px] text-on-surface-variant">
-                    {language === "es" ? "Prueba de Micrófono WebRTC & Reconocimiento de Voz" : "WebRTC Browser Microphone & Speech Testing"}
+                    {language === "es"
+                      ? "Asistente Conversacional de Recepción • Voz Web Speech + OpenRouter LLM"
+                      : "Interactive Conversational Booking Assistant • Browser Web Speech + OpenRouter LLM"}
                   </p>
                 </div>
               </div>
@@ -1265,7 +1369,40 @@ const Dashboard = () => {
 
             {/* Connected State */}
             {simState === "connected" && (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3.5">
+                {/* Architectural Distinction Banner */}
+                <div className="bg-surface-container-low border border-outline-variant/40 rounded-xl p-3 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-[10px] uppercase tracking-wider text-primary flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-primary" />
+                      Voice Architecture Telephony Gating
+                    </span>
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      Inbound vs Outbound
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-0.5">
+                    <div className="p-2 rounded-lg bg-surface-container-lowest border border-outline-variant/30">
+                      <p className="font-bold text-on-surface flex items-center gap-1 text-[11px] text-[#396a00] dark:text-[#7fcd4d]">
+                        <PhoneIncoming className="w-3 h-3 text-[#396a00] dark:text-[#7fcd4d]" />
+                        Inbound Reception
+                      </p>
+                      <p className="text-on-surface-variant text-[10px] mt-0.5 leading-snug">
+                        Interactive conversational booking assistant (Browser Speech + OpenRouter LLM) handling patient inquiries, provider slot lookups, and multi-turn scheduling triage.
+                      </p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-surface-container-lowest border border-outline-variant/30">
+                      <p className="font-bold text-on-surface flex items-center gap-1 text-[11px] text-[#006493] dark:text-[#58a6ff]">
+                        <PhoneOutgoing className="w-3 h-3 text-[#006493] dark:text-[#58a6ff]" />
+                        Outbound Campaigns
+                      </p>
+                      <p className="text-on-surface-variant text-[10px] mt-0.5 leading-snug">
+                        Autonomous batch calling powered by the native CALL-E Autonomous Voice Agent SDK (24h confirmations, 2h no-show recovery, 60d recalls, and IVR prior auth).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Voice waves animation */}
                 <div className="bg-surface-container-lowest/90 border border-outline-variant/40 rounded-xl p-4 flex flex-col items-center justify-center shadow-inner">
                   <div className="flex justify-center items-center gap-1.5 h-12 my-2 select-none">
@@ -1365,9 +1502,7 @@ const Dashboard = () => {
                     type="text"
                     value={inputText}
                     onChange={(e) => {
-                      if ("speechSynthesis" in window) {
-                        window.speechSynthesis.cancel();
-                      }
+                      cancelSpeech();
                       setInputText(e.target.value);
                     }}
                     disabled={isBotTyping}

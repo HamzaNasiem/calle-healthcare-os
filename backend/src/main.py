@@ -328,14 +328,13 @@ async def health_detailed():
     import asyncio
     import datetime
     from twilio.rest import Client as TwilioClient
-    from retell import Retell as RetellClient
     from .core.database import supabase_read
     from .core.config import settings
-    
+
     db_status = "unknown"
     twilio_status = "unknown"
-    retell_status = "unknown"
-    
+    calle_status = "unknown"
+
     # 1. Check database
     try:
         res = await asyncio.get_event_loop().run_in_executor(
@@ -351,7 +350,6 @@ async def health_detailed():
     try:
         if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
             twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            # Fetch simple account details to verify credentials
             account = await anyio.to_thread.run_sync(
                 lambda: twilio_client.api.v2010.accounts(settings.TWILIO_ACCOUNT_SID).fetch()
             )
@@ -362,30 +360,29 @@ async def health_detailed():
         twilio_status = f"unhealthy: {str(e)}"
         log.error(f"Detailed health check - Twilio failed: {str(e)}")
 
-    # 3. Check Retell AI
+    # 3. Check CALL-E autonomous voice engine
     try:
-        if settings.RETELL_API_KEY:
-            retell_client = RetellClient(api_key=settings.RETELL_API_KEY)
-            # Call agent.list with limit 1 to check connectivity
-            agents = await anyio.to_thread.run_sync(
-                lambda: retell_client.agent.list()
-            )
-            retell_status = "healthy"
+        calle_api_key = getattr(settings, "CALLE_API_KEY", None) or getattr(settings, "calle_api_key", None)
+        if calle_api_key and str(calle_api_key).strip():
+            from .services.calle_service import calle_service
+            goals = await calle_service.list_goals()
+            calle_status = "healthy" if goals else "healthy (no goals configured)"
         else:
-            retell_status = "unconfigured"
+            calle_status = "unconfigured"
     except Exception as e:
-        retell_status = f"unhealthy: {str(e)}"
-        log.error(f"Detailed health check - Retell failed: {str(e)}")
+        calle_status = f"unhealthy: {str(e)}"
+        log.error(f"Detailed health check - CALL-E failed: {str(e)}")
 
     overall = "healthy"
-    if "unhealthy" in db_status or "unhealthy" in twilio_status or "unhealthy" in retell_status:
+    if "unhealthy" in db_status or "unhealthy" in twilio_status or "unhealthy" in calle_status:
         overall = "unhealthy"
 
     response_payload = {
         "status": overall,
         "database": db_status,
         "twilio": twilio_status,
-        "retell": retell_status,
+        "calle": calle_status,
+        "engine": "calle",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
 

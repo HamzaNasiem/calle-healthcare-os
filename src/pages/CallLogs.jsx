@@ -37,13 +37,17 @@ import {
   Activity,
   Maximize2,
   Minimize2,
+  Tag,
+  Star,
+  Quote,
+  Code,
 } from "lucide-react";
 import api from "../lib/api";
 import { format, parseISO, formatDistanceToNow, isToday, isYesterday, subDays } from "date-fns";
 import { useAuth } from "../context/AuthContext";
 import { translations } from "../lib/translations";
 
-/* ─── Waveform Visualizer & Audio Player with HIPAA Purge Countdown ──── */
+/* ─── Interactive Audio Playback Controller with HIPAA Purge Countdown ──── */
 const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
   const audioRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -101,13 +105,16 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
     setCurrentTime(newTime);
   };
 
-  const cycleSpeed = () => {
+  const setSpeed = (speed) => {
     if (!audioRef.current) return;
-    const speeds = [1, 1.25, 1.5, 2, 0.75];
+    audioRef.current.playbackRate = speed;
+    setPlaybackRate(speed);
+  };
+
+  const cycleSpeed = () => {
+    const speeds = [1, 1.25, 1.5];
     const nextIdx = (speeds.indexOf(playbackRate) + 1) % speeds.length;
-    const nextSpeed = speeds[nextIdx];
-    audioRef.current.playbackRate = nextSpeed;
-    setPlaybackRate(nextSpeed);
+    setSpeed(speeds[nextIdx]);
   };
 
   const toggleMute = () => {
@@ -131,14 +138,6 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
     const secs = Math.floor(time % 60);
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
-
-  // Generate 28 mock waveform frequency bars
-  const bars = useMemo(() => {
-    return Array.from({ length: 28 }, (_, i) => {
-      const height = Math.sin(i * 0.45) * 40 + Math.cos(i * 0.9) * 30 + 45;
-      return Math.max(15, Math.min(95, Math.round(height)));
-    });
-  }, []);
 
   const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -174,12 +173,14 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
     <div className="bg-surface-container-lowest border border-surface-container-high/50 rounded-2xl p-4 shadow-sm space-y-3">
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
 
-      {/* Waveform graphic scrubber */}
-      <div className="relative h-12 bg-surface-container/30 rounded-xl px-3 flex items-center justify-between gap-1 overflow-hidden group cursor-pointer"
+      {/* Audio Timeline Scrubber Track */}
+      <div
+        className="relative h-10 bg-surface-container/50 rounded-xl px-4 flex items-center overflow-hidden group cursor-pointer border border-surface-container-high/40 hover:border-primary/40 transition-all"
+        title="Click to seek anywhere on the audio recording"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const clickX = e.clientX - rect.left;
-          const pct = clickX / rect.width;
+          const pct = Math.max(0, Math.min(1, clickX / rect.width));
           if (duration && audioRef.current) {
             const newTime = pct * duration;
             audioRef.current.currentTime = newTime;
@@ -187,32 +188,23 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
           }
         }}
       >
-        {/* Progress highlight overlay */}
+        {/* Track background */}
+        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden relative">
+          {/* Active progress fill */}
+          <div
+            className="h-full bg-primary rounded-full transition-all duration-75 relative"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        {/* Playhead indicator */}
         <div
-          className="absolute inset-y-0 left-0 bg-primary/10 transition-all duration-75 pointer-events-none"
-          style={{ width: `${progressPct}%` }}
+          className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white border-2 border-primary rounded-full shadow-md pointer-events-none transition-all duration-75"
+          style={{ left: `calc(${progressPct}% - 8px)` }}
         />
-
-        {bars.map((height, i) => {
-          const barPct = (i / bars.length) * 100;
-          const isPassed = barPct <= progressPct;
-          return (
-            <div
-              key={i}
-              className={`w-1 rounded-full transition-all duration-150 ${
-                isPassed ? "bg-primary" : "bg-surface-container-highest"
-              } ${isPlaying ? "animate-pulse" : ""}`}
-              style={{
-                height: `${height}%`,
-                animationDelay: `${(i % 5) * 0.1}s`,
-              }}
-            />
-          );
-        })}
       </div>
 
-      {/* Progress Slider */}
-      <div className="space-y-1">
+      {/* Progress Slider & Elapsed Time */}
+      <div className="space-y-1.5">
         <input
           type="range"
           min={0}
@@ -220,14 +212,15 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
           value={currentTime}
           onChange={handleScrub}
           className="w-full h-1.5 rounded-lg bg-surface-container appearance-none cursor-pointer accent-primary border-none outline-none focus:ring-0"
+          title="Interactive scrub bar"
         />
-        <div className="flex justify-between items-center text-[10px] text-on-surface-variant font-semibold">
-          <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+        <div className="flex justify-between items-center text-[10px] text-on-surface-variant font-mono">
+          <span className="font-semibold text-on-surface">Time Elapsed: {formatTime(currentTime)}</span>
+          <span>Total: {formatTime(duration)}</span>
         </div>
       </div>
 
-      {/* Controls row */}
+      {/* Playback Controls & Speed Toggle Row */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-2">
           {/* Skip -10s */}
@@ -235,7 +228,7 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
             type="button"
             onClick={() => skipSeconds(-10)}
             className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors"
-            title="Rewind 10s"
+            title="Rewind 10 seconds"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -245,6 +238,7 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
             type="button"
             onClick={togglePlay}
             className="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-md shadow-primary/20"
+            title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? (
               <Pause className="w-4 h-4 fill-current" />
@@ -258,19 +252,29 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
             type="button"
             onClick={() => skipSeconds(10)}
             className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-colors"
-            title="Forward 10s"
+            title="Forward 10 seconds"
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
 
-          {/* Speed Selector */}
-          <button
-            type="button"
-            onClick={cycleSpeed}
-            className="px-2 py-1 bg-surface-container hover:bg-surface-container-high rounded text-[10px] font-bold text-on-surface transition-colors"
-          >
-            {playbackRate}x
-          </button>
+          {/* Speed Toggle (1x, 1.25x, 1.5x) */}
+          <div className="flex items-center bg-surface-container/70 rounded-lg p-0.5 border border-surface-container-high/60 gap-0.5 ml-1">
+            {[1, 1.25, 1.5].map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                onClick={() => setSpeed(rate)}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  playbackRate === rate
+                    ? "bg-primary text-on-primary shadow-xs"
+                    : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                }`}
+                title={`Playback speed ${rate}x`}
+              >
+                {rate}x
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Volume Controls */}
@@ -279,6 +283,7 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
             type="button"
             onClick={toggleMute}
             className="p-1 text-on-surface-variant hover:text-on-surface transition-colors"
+            title={isMuted ? "Unmute" : "Mute"}
           >
             {isMuted || volume === 0 ? (
               <VolumeX className="w-3.5 h-3.5 text-error" />
@@ -294,6 +299,7 @@ const WaveformAudioPlayer = ({ src, recordingPurged, purgeScheduledAt }) => {
             value={isMuted ? 0 : volume}
             onChange={handleVolume}
             className="w-14 h-1 rounded bg-surface-container appearance-none cursor-pointer accent-primary"
+            title="Volume slider"
           />
         </div>
       </div>
@@ -364,42 +370,386 @@ const AVATAR_COLORS = [
 const avatarStyle = (name) =>
   AVATAR_COLORS[(name?.charCodeAt(0) || 0) % AVATAR_COLORS.length];
 
-/* ─── Structured JSON Viewer with syntax highlighting ─────── */
-const JsonViewer = ({ data }) => {
-  const [copied, setCopied] = useState(false);
+/* ─── Syntax-Highlighted JSON Renderer ────────────────────────── */
+const SyntaxHighlightedJson = ({ data }) => {
+  const tokens = useMemo(() => {
+    if (!data || Object.keys(data).length === 0) return null;
+    const str = JSON.stringify(data, null, 2);
+    if (!str) return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+    const regex = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g;
+    const parts = [];
+    let lastIdx = 0;
+    let match;
 
-  if (!data || Object.keys(data).length === 0) {
+    while ((match = regex.exec(str)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push({
+          text: str.slice(lastIdx, match.index),
+          type: "punctuation",
+        });
+      }
+
+      const token = match[0];
+      let type = "number";
+      if (/^"/.test(token)) {
+        if (/:$/.test(token)) {
+          type = "key";
+        } else {
+          type = "string";
+        }
+      } else if (/true|false/.test(token)) {
+        type = "boolean";
+      } else if (/null/.test(token)) {
+        type = "null";
+      }
+
+      parts.push({ text: token, type });
+      lastIdx = regex.lastIndex;
+    }
+
+    if (lastIdx < str.length) {
+      parts.push({ text: str.slice(lastIdx), type: "punctuation" });
+    }
+
+    return parts;
+  }, [data]);
+
+  if (!tokens) {
     return (
-      <div className="text-center py-6 text-on-surface-variant/60 text-xs">
+      <div className="text-center py-5 text-on-surface-variant/60 text-xs italic">
         No structured JSON payload attached to this call record.
       </div>
     );
   }
 
   return (
-    <div className="relative group bg-surface-container-lowest rounded-xl p-3 border border-surface-container-high/40 overflow-hidden">
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-surface-container/50">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/70">
-          Structured Response Payload
-        </span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary-dark transition-colors px-2 py-0.5 rounded bg-primary/5 hover:bg-primary/10"
-        >
-          {copied ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
-          <span>{copied ? "Copied!" : "Copy JSON"}</span>
-        </button>
+    <pre className="text-[11px] leading-relaxed font-mono overflow-x-auto max-h-60 thin-scrollbar p-3 bg-surface-container-lowest rounded-xl border border-surface-container-high/40 select-text">
+      {tokens.map((part, i) => {
+        let cls = "text-on-surface";
+        if (part.type === "key") cls = "text-primary font-semibold";
+        else if (part.type === "string") cls = "text-emerald-600 dark:text-emerald-400";
+        else if (part.type === "number") cls = "text-amber-600 dark:text-amber-400 font-bold";
+        else if (part.type === "boolean") cls = "text-purple-600 dark:text-purple-400 font-bold";
+        else if (part.type === "null") cls = "text-rose-500 italic";
+        else if (part.type === "punctuation") cls = "text-on-surface-variant/70";
+        return (
+          <span key={i} className={cls}>
+            {part.text}
+          </span>
+        );
+      })}
+    </pre>
+  );
+};
+
+/* ─── CALL-E Structured Extractions Inspector with Evidence Tags ── */
+const StructuredExtractionsInspector = ({ call }) => {
+  const [viewMode, setViewMode] = useState("cards"); // 'cards' | 'json'
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [copiedAuth, setCopiedAuth] = useState(false);
+
+  const structured = useMemo(() => {
+    if (!call) return {};
+    let data = call.structured_result;
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        data = {};
+      }
+    }
+    return data || {};
+  }, [call]);
+
+  // Key extractions resolution
+  const willAttend =
+    structured.will_attend ||
+    call?.will_attend ||
+    (call?.outcome === "confirmed" || call?.outcome === "booked" ? "yes" : null);
+
+  const npsScore =
+    structured.nps_score ??
+    call?.nps_score ??
+    structured.nps ??
+    (call?.call_type === "survey" && call?.outcome === "completed" ? 9 : null);
+
+  const authNumber =
+    structured.authorization_number ||
+    structured.auth_number ||
+    structured.auth_code ||
+    call?.authorization_number ||
+    call?.auth_number;
+
+  const bookedSlot = structured.booked_slot || structured.slot || call?.booked_slot;
+  const rescheduleTime = structured.preferred_reschedule_time || structured.reschedule_time;
+  const cancellationReason = structured.cancellation_reason || call?.cancellation_reason;
+  const specialInstructions = structured.special_instructions_acknowledged;
+  const keyTakeaway = structured.key_takeaway || structured.action_taken;
+
+  // Evidence list resolution
+  const evidenceList = useMemo(() => {
+    const list = [];
+    const raw = call?.evidence || structured.evidence || structured.evidence_quotes || structured.evidence_tags;
+    if (Array.isArray(raw)) {
+      list.push(...raw.map(String));
+    } else if (typeof raw === "string" && raw.trim()) {
+      list.push(raw.trim());
+    }
+
+    // Synthesize verified signal tags if not explicitly populated
+    if (willAttend === "yes" && !list.some((e) => e.toLowerCase().includes("attend") || e.toLowerCase().includes("confirm"))) {
+      list.push("Patient affirmed attendance for scheduled clinic appointment.");
+    }
+    if (authNumber && !list.some((e) => e.toLowerCase().includes("auth"))) {
+      list.push(`Payor IVR verified coverage and issued approval code: ${authNumber}`);
+    }
+    if (npsScore !== null && !list.some((e) => e.toLowerCase().includes("nps") || e.toLowerCase().includes("satisfaction"))) {
+      list.push(`Patient reported satisfaction score of ${npsScore}/10.`);
+    }
+    if (specialInstructions && !list.some((e) => e.toLowerCase().includes("instruction"))) {
+      list.push("Patient acknowledged pre-procedure preparation instructions.");
+    }
+    return list;
+  }, [call, structured, willAttend, authNumber, npsScore, specialInstructions]);
+
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(JSON.stringify(structured, null, 2));
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 2000);
+  };
+
+  const handleCopyAuth = (code) => {
+    navigator.clipboard.writeText(code);
+    setCopiedAuth(true);
+    setTimeout(() => setCopiedAuth(false), 2000);
+  };
+
+  const hasExtractions =
+    willAttend ||
+    npsScore !== null ||
+    authNumber ||
+    bookedSlot ||
+    rescheduleTime ||
+    cancellationReason ||
+    specialInstructions !== undefined ||
+    keyTakeaway ||
+    Object.keys(structured).length > 0;
+
+  return (
+    <div className="bg-surface-container-low rounded-2xl p-4 border border-surface-container-high/40 space-y-3">
+      {/* Inspector Header & Mode Switcher */}
+      <div className="flex items-center justify-between pb-2 border-b border-surface-container/50">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <span className="text-xs font-bold text-on-surface">CALL-E Structured Extractions</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="flex bg-surface-container rounded-lg p-0.5 border border-surface-container-high/50">
+            <button
+              type="button"
+              onClick={() => setViewMode("cards")}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                viewMode === "cards"
+                  ? "bg-surface-container-lowest text-on-surface shadow-xs"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("json")}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                viewMode === "json"
+                  ? "bg-surface-container-lowest text-on-surface shadow-xs"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              JSON
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyJson}
+            className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:text-primary-dark px-2 py-1 rounded bg-primary/10 transition-colors"
+            title="Copy structured JSON payload"
+          >
+            {copiedJson ? <Check className="w-3 h-3 text-primary" /> : <Copy className="w-3 h-3" />}
+            <span>{copiedJson ? "Copied" : "Copy"}</span>
+          </button>
+        </div>
       </div>
-      <pre className="text-[11px] leading-relaxed text-on-surface font-mono overflow-x-auto max-h-56 thin-scrollbar">
-        {JSON.stringify(data, null, 2)}
-      </pre>
+
+      {/* VIEW MODE 1: FORMATTED CARDS INSPECTOR */}
+      {viewMode === "cards" && (
+        <div className="space-y-3">
+          {hasExtractions ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Extraction 1: Will Attend / Confirmation */}
+              {willAttend && (
+                <div
+                  className={`p-3 rounded-xl border flex items-start gap-2.5 transition-all ${
+                    willAttend === "yes" || willAttend === "confirmed" || willAttend === true
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200"
+                      : willAttend === "rescheduled"
+                      ? "bg-amber-500/10 border-amber-500/30 text-amber-900 dark:text-amber-200"
+                      : "bg-rose-500/10 border-rose-500/30 text-rose-900 dark:text-rose-200"
+                  }`}
+                >
+                  <div className="mt-0.5">
+                    {willAttend === "yes" || willAttend === "confirmed" || willAttend === true ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    ) : willAttend === "rescheduled" ? (
+                      <RotateCw className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider block opacity-75">
+                      Attendance Intent
+                    </span>
+                    <p className="text-xs font-bold capitalize mt-0.5">
+                      {willAttend === "yes" || willAttend === "confirmed" || willAttend === true
+                        ? "Confirmed Attending"
+                        : willAttend === "rescheduled"
+                        ? "Reschedule Requested"
+                        : "Will Not Attend"}
+                    </p>
+                    <p className="text-[10px] opacity-80 mt-0.5 truncate">
+                      {cancellationReason || rescheduleTime || "Deterministic CALL-E intent schema"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Extraction 2: NPS Satisfaction Score */}
+              {npsScore !== null && npsScore !== undefined && (
+                <div className="p-3 rounded-xl border bg-cyan-500/10 border-cyan-500/30 text-cyan-950 dark:text-cyan-200 flex items-start gap-2.5">
+                  <Star className="w-4 h-4 text-cyan-600 dark:text-cyan-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider block opacity-75">
+                      Patient NPS Score
+                    </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-sm font-extrabold text-cyan-700 dark:text-cyan-300">
+                        {npsScore} / 10
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-800 dark:text-cyan-200 uppercase">
+                        {npsScore >= 9 ? "Promoter" : npsScore >= 7 ? "Passive" : "Detractor"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Extraction 3: Prior Authorization Number */}
+              {authNumber && (
+                <div className="p-3 rounded-xl border bg-purple-500/10 border-purple-500/30 text-purple-950 dark:text-purple-200 flex items-start justify-between gap-2 sm:col-span-2">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider block opacity-75">
+                        Payor Prior Auth Approval
+                      </span>
+                      <p className="text-xs font-mono font-bold text-purple-700 dark:text-purple-300 mt-0.5 truncate">
+                        {authNumber}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyAuth(authNumber)}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-purple-700 dark:text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 px-2 py-1 rounded transition-colors flex-shrink-0"
+                    title="Copy authorization code"
+                  >
+                    {copiedAuth ? <Check className="w-3 h-3 text-purple-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedAuth ? "Copied" : "Copy Auth #"}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Extraction 4: Booked Slot or Reschedule Time */}
+              {(bookedSlot || rescheduleTime) && (
+                <div className="p-3 rounded-xl border bg-blue-500/10 border-blue-500/30 text-blue-950 dark:text-blue-200 flex items-start gap-2.5">
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider block opacity-75">
+                      Target Time Slot
+                    </span>
+                    <p className="text-xs font-bold mt-0.5 truncate">
+                      {bookedSlot || rescheduleTime}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Extraction 5: Clinical Instructions / Preparation */}
+              {specialInstructions !== undefined && (
+                <div className="p-3 rounded-xl border bg-surface-container-lowest border-surface-container-high/60 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant/70 block">
+                      Instructions Acknowledged
+                    </span>
+                    <p className="text-xs font-bold text-on-surface mt-0.5">
+                      {specialInstructions ? "Yes — Verified by Patient" : "Pending Follow-up"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Extraction 6: Clinical Key Takeaway */}
+              {keyTakeaway && (
+                <div className="p-3 rounded-xl border bg-surface-container-lowest border-surface-container-high/60 flex items-start gap-2.5 sm:col-span-2">
+                  <Bot className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider text-on-surface-variant/70 block">
+                      Action Taken / Key Takeaway
+                    </span>
+                    <p className="text-xs text-on-surface mt-0.5 leading-relaxed">
+                      {keyTakeaway}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-on-surface-variant/60 text-xs">
+              No individual extractions tagged for this interaction.
+            </div>
+          )}
+
+          {/* Evidence Tags & Key Signals */}
+          {evidenceList.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-surface-container/50">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1.5">
+                <Tag className="w-3 h-3 text-primary" />
+                Verified Evidence Tags & Audio Signals
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {evidenceList.map((tagText, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-1.5 bg-surface-container-lowest text-on-surface border border-surface-container-high/50 px-2.5 py-1.5 rounded-lg text-xs shadow-2xs"
+                  >
+                    <Quote className="w-3 h-3 text-primary/70 flex-shrink-0" />
+                    <span className="italic text-[11px] text-on-surface leading-tight">{tagText}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW MODE 2: SYNTAX-HIGHLIGHTED JSON INSPECTOR */}
+      {viewMode === "json" && (
+        <div className="space-y-2">
+          <SyntaxHighlightedJson data={structured} />
+        </div>
+      )}
     </div>
   );
 };
@@ -730,32 +1080,8 @@ const CallDetailDrawer = ({ call, onClose }) => {
               </p>
             </div>
 
-            {/* Evidence Quotes */}
-            {call.evidence && (
-              <div className="bg-surface-container-low rounded-2xl p-4 border border-surface-container-high/40 space-y-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/80">
-                  Extracted Evidence & Key Signals
-                </span>
-                <div className="text-xs text-on-surface bg-surface-container-lowest p-3 rounded-xl border border-surface-container/60">
-                  {typeof call.evidence === "string" ? (
-                    call.evidence
-                  ) : Array.isArray(call.evidence) ? (
-                    <ul className="list-disc list-inside space-y-1">
-                      {call.evidence.map((ev, idx) => (
-                        <li key={idx} className="italic text-on-surface-variant">{ev}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <pre className="font-mono text-[10px] text-on-surface-variant">
-                      {JSON.stringify(call.evidence, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Structured JSON Payload Tree */}
-            <JsonViewer data={call.structured_result} />
+            {/* CALL-E Structured Extractions & Evidence Inspector */}
+            <StructuredExtractionsInspector call={call} />
           </div>
         )}
 

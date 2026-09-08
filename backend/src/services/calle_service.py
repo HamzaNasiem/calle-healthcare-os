@@ -400,28 +400,7 @@ class CalleService:
         except Exception as exc:
             error_msg = str(exc)
             log.error("[CALL-E ERROR] key=%s error_type=%s: %s", idempotency_key, type(exc).__name__, error_msg)
-            if "plan limit" in error_msg.lower() or "rate limit" in error_msg.lower():
-                log.warning("[CALL-E QUOTA] 24-hour call plan limit reached on trial key. Engaging high-availability autonomous fallback.")
-                sim_id = f"call_quota_{uuid.uuid4().hex[:12]}"
-                structured_res = {"will_attend": "yes", "reschedule_request": False}
-                if "wants_rebook" in str(result_schema):
-                    structured_res = {"wants_rebook": "yes", "preferred_day": "Tomorrow", "preferred_time": "10:30 AM"}
-                elif "nps_score" in str(result_schema):
-                    structured_res = {"nps_score": 10, "would_recommend": "yes", "main_feedback": "Excellent service and care."}
-                elif "accepts_slot" in str(result_schema):
-                    structured_res = {"accepts_slot": True, "notes": "Patient accepted open slot."}
-                return AwaitableDict({
-                    "id": sim_id,
-                    "call_id": sim_id,
-                    "status": "completed",
-                    "task_completed": True,
-                    "completion_confidence": {"score": 0.95, "label": "high"},
-                    "structured_result": structured_res,
-                    "summary": "Call completed via CALL-E HA pipeline (Daily trial API limit reached on key; structured schema extraction verified).",
-                    "plan_limit_reached": True,
-                    "warning": "The 24-hour call plan limit has been reached on your CALL-E trial key. Add credits at dashboard.heycall-e.com for unlimited live calls.",
-                })
-            return AwaitableDict(self._error_result(str(exc)))
+            return self._error_result(error_msg)
 
     def _sync_create_fire_and_forget(
         self,
@@ -473,30 +452,7 @@ class CalleService:
         except Exception as exc:
             error_msg = str(exc)
             log.error("[CALL-E ERROR] key=%s error=%s", idempotency_key, error_msg)
-            if "plan limit" in error_msg.lower() or "rate limit" in error_msg.lower():
-                log.warning("[CALL-E QUOTA] 24-hour call plan limit reached on trial key. Engaging high-availability autonomous queue.")
-                sim_id = f"call_quota_{uuid.uuid4().hex[:12]}"
-                return AwaitableDict({
-                    "id": sim_id,
-                    "call_id": sim_id,
-                    "status": "queued",
-                    "task_completed": False,
-                    "completion_confidence": {"score": 0.95, "label": "pending"},
-                    "structured_result": None,
-                    "summary": "Call queued via CALL-E HA pipeline (Daily trial API limit reached on key).",
-                    "plan_limit_reached": True,
-                    "warning": "The 24-hour call plan limit has been reached on your CALL-E trial key. Add credits at dashboard.heycall-e.com for unlimited live calls.",
-                })
-            return AwaitableDict({
-                "id": None,
-                "status": "failed",
-                "task_completed": False,
-                "completion_confidence": {"score": 0.0, "label": "low"},
-                "structured_result": None,
-                "evidence": [],
-                "error": error_msg,
-                "summary": error_msg,
-            })
+            return self._error_result(error_msg)
 
     # ── Core Generic CALL-E Dispatcher (API 0.6.0) ────────────────────────────
 
@@ -521,7 +477,7 @@ class CalleService:
         schema = result_schema or CONFIRMATION_SCHEMA
 
         if self.is_dry_run():
-            calle_id = f"call_{uuid.uuid4().hex[:20]}"
+            calle_id = f"call_dryrun_{uuid.uuid4().hex[:16]}"
             if not wait_for_completion:
                 return AwaitableDict({
                     "id": calle_id,
@@ -530,7 +486,7 @@ class CalleService:
                     "task_completed": False,
                     "completion_confidence": {"score": 0.0, "label": "pending"},
                     "structured_result": None,
-                    "summary": "Call queued successfully with CALL-E agent dispatcher.",
+                    "summary": "[DRY-RUN] Call queued in simulated dry-run mode.",
                 })
             return AwaitableDict({
                 "id": calle_id,
@@ -541,10 +497,10 @@ class CalleService:
                 "structured_result": {
                     "will_attend": "yes",
                     "reschedule_request": False,
-                    "notes": "[DRY-RUN] Outbound call completed successfully via CALL-E engine.",
+                    "notes": "[DRY-RUN] Outbound call simulation.",
                 },
-                "summary": "CALL-E autonomous voice agent completed outbound conversation.",
-                "evidence": ["Call concluded; structured extraction verified."],
+                "summary": "[DRY-RUN] CALL-E autonomous agent completed simulation.",
+                "evidence": ["Simulated dry run completed."],
             })
 
         if not wait_for_completion:
@@ -607,10 +563,29 @@ class CalleService:
             self._sync_create_and_wait, task, phone, CONFIRMATION_SCHEMA, idempotency_key, region
         )
 
-    def _build_noshow_script(self, time_str: str, clinic_name: str) -> str:
-        """HIPAA: Patient name is NEVER included in task prompt text per minimum-necessary rule."""
+    def _build_noshow_script(self, *args, **kwargs) -> str:
+        """HIPAA: Build empathetic no-show recovery script for CALL-E agent."""
+        if len(args) == 3:
+            patient_name, time_str, clinic_name = args
+            greeting = f"Hello {patient_name}, " if patient_name is not None else "Hello, "
+            return (
+                f"{greeting}this is CALL-E calling from {clinic_name}. "
+                f"We missed you for your {time_str} appointment today. Is everything alright? "
+                f"We would love to reschedule you at no cancellation fee."
+            )
+        elif len(args) == 2:
+            time_str, clinic_name = args
+            return (
+                f"Hello, this is CALL-E calling from {clinic_name}. "
+                f"We missed you for your {time_str} appointment today. Is everything alright? "
+                f"We would love to reschedule you at no cancellation fee."
+            )
+        patient_name = kwargs.get("patient_name")
+        time_str = kwargs.get("time_str", "today's appointment")
+        clinic_name = kwargs.get("clinic_name", "the clinic")
+        greeting = f"Hello {patient_name}, " if patient_name is not None else "Hello, "
         return (
-            f"Hello, this is CALL-E calling from {clinic_name}. "
+            f"{greeting}this is CALL-E calling from {clinic_name}. "
             f"We missed you for your {time_str} appointment today. Is everything alright? "
             f"We would love to reschedule you at no cancellation fee."
         )
@@ -910,16 +885,35 @@ class CalleService:
     async def list_goals(self, limit: int = 50, after: Optional[str] = None) -> Dict[str, Any]:
         """List active published goals per https://docs.heycall-e.com/goal-runs."""
         if self.is_dry_run() or not self.client:
-            return self._mock_goals_list()
+            return {
+                "object": "list",
+                "data": [],
+                "next_cursor": None,
+                "message": "No custom goals are currently published. Create and publish goals in your CALL-E workspace.",
+            }
         try:
             if hasattr(self.client, "goals") and hasattr(self.client.goals, "list"):
                 res = await asyncio.to_thread(self.client.goals.list, limit=limit, after=after)
                 res_dict = dict(res) if res else {}
+                data = res_dict.get("data", [])
+                if not data:
+                    res_dict["data"] = []
+                    res_dict.setdefault("message", "No custom goals are currently published.")
                 return res_dict
-            return {"object": "list", "data": [], "next_cursor": None}
+            return {
+                "object": "list",
+                "data": [],
+                "next_cursor": None,
+                "message": "No custom goals are currently published.",
+            }
         except Exception as exc:
-            log.warning("[CALL-E GOALS LIST] %s — falling back to mock goals", exc)
-            return self._mock_goals_list()
+            log.warning("[CALL-E GOALS LIST] %s — returning empty goals list", exc)
+            return {
+                "object": "list",
+                "data": [],
+                "next_cursor": None,
+                "message": "No custom goals are currently published.",
+            }
 
     async def create_goal_run(
         self,
@@ -1182,13 +1176,14 @@ class CalleService:
     def _error_result(error_msg: str) -> AwaitableDict:
         return AwaitableDict({
             "id": None,
+            "call_id": None,
             "status": "failed",
             "task_completed": False,
-            "completion_confidence": {"score": 0.0, "label": "low"},
+            "completion_confidence": {"score": 0.0, "label": "error"},
             "structured_result": None,
             "evidence": {"error": error_msg},
             "error": error_msg,
-            "summary": f"CALL-E API error: {error_msg}",
+            "summary": f"CALL-E API Error: {error_msg}",
         })
 
     @staticmethod
@@ -1289,66 +1284,9 @@ class CalleService:
     def _mock_goals_list() -> Dict[str, Any]:
         return {
             "object": "list",
-            "data": [
-                {
-                    "id": "goal_prep_colonoscopy",
-                    "name": "Colonoscopy Pre-Procedure Prep Protocol",
-                    "description": "Calls patients 48 hours before GI procedures to verify clear liquid diet, prep medication intake, and adult driver accompaniment.",
-                    "status": "published",
-                    "created_at": "2026-08-01T12:00:00Z",
-                    "variables": {
-                        "procedure_time": "Time of procedure (e.g., Thursday at 8:30 AM)",
-                        "driver_name": "Name of assigned adult driver",
-                        "prep_medication": "Name of prescribed prep solution (e.g. MiraLAX)",
-                    },
-                },
-                {
-                    "id": "goal_post_discharge_48h",
-                    "name": "Post-Discharge 48-Hour Recovery & Wellness Check",
-                    "description": "Engages recently discharged or post-surgical patients to assess pain levels, red-flag symptoms, and prescription pickup.",
-                    "status": "published",
-                    "created_at": "2026-08-10T09:30:00Z",
-                    "variables": {
-                        "discharge_condition": "Primary surgical or admission reason",
-                        "key_medication": "Essential post-op prescription",
-                        "followup_date": "Scheduled in-clinic follow-up date",
-                    },
-                },
-                {
-                    "id": "goal_annual_wellness_outreach",
-                    "name": "Medicare Annual Wellness Visit (AWV) Outreach",
-                    "description": "Proactively identifies eligible Medicare patients due for preventative wellness assessments and schedules appointments.",
-                    "status": "published",
-                    "created_at": "2026-08-15T14:15:00Z",
-                    "variables": {
-                        "doctor_name": "Primary Care Physician",
-                        "recommended_month": "Target month for scheduling",
-                    },
-                },
-                {
-                    "id": "goal_rx_refill_adherence",
-                    "name": "Chronic Medication Adherence & Refill Outreach",
-                    "description": "Checks if chronic hypertensive/diabetic patients have refilled 90-day maintenance medications and screens for adverse side effects.",
-                    "status": "published",
-                    "created_at": "2026-08-20T11:00:00Z",
-                    "variables": {
-                        "medication_name": "Medication and dosage (e.g., Lisinopril 20mg)",
-                        "pharmacy_name": "Patient's designated pharmacy",
-                    },
-                },
-                {
-                    "id": "goal_lab_results_notification",
-                    "name": "Normal Lab Results Notification & Follow-up",
-                    "description": "Informs patients of normal routine bloodwork/imaging results and confirms next routine check-up.",
-                    "status": "published",
-                    "created_at": "2026-08-22T16:00:00Z",
-                    "variables": {
-                        "lab_panel": "Type of lab panel (e.g., Comprehensive Metabolic Panel)",
-                        "doctor_notes": "Physician's note (e.g. All values within normal limits)",
-                    },
-                },
-            ],
+            "data": [],
             "next_cursor": None,
+            "message": "No custom goals are currently published. Create and publish goals in your CALL-E workspace.",
         }
 
 

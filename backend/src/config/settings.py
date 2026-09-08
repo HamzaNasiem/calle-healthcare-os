@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     # LLM
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENROUTER_API_KEY: str | None = None
 
     # CALL-E
     calle_api_key: str | None = None

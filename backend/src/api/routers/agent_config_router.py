@@ -1,7 +1,7 @@
 """
-agent_config_router.py — Custom Voice Agent Builder & Retell AI Synchronization
+agent_config_router.py — Custom Voice Agent Builder & CALL-E Voice Configuration
 
-Allows clinic owners to configure their Retell AI voice agent:
+Allows clinic owners to configure their CALL-E AI voice agent:
 - Custom greeting message (begin_message)
 - Custom system prompt & persona guidelines
 - Voice ID selection (ElevenLabs & OpenAI voices)
@@ -9,7 +9,7 @@ Allows clinic owners to configure their Retell AI voice agent:
 - Emergency forwarding & call transfer phone number
 - Dynamic FAQs knowledge base
 - A/B Script testing
-- 100% Real DB & Retell AI API Persistence
+- 100% Real DB & CALL-E AI API Persistence
 """
 
 from __future__ import annotations
@@ -228,7 +228,7 @@ def compile_agent_prompt(
     fallback_language: Optional[str] = None,
 ) -> str:
     """
-    Build the full, HIPAA-compliant system prompt that is pushed to Retell AI and CALL-E voice engine.
+    Build the full, HIPAA-compliant system prompt that is pushed to CALL-E AI and CALL-E voice engine.
 
     Structure:
     1. Persona, AI Name ({ai_name}), Clinic Identity & Primary Physician Roster
@@ -472,7 +472,7 @@ async def _sync_to_retell(
     emergency_forward_phone: Optional[str] = None,
 ) -> dict:
     """
-    Synchronize agent settings with Retell AI API:
+    Synchronize agent settings with CALL-E AI API:
     - Updates agent attributes (voice_id, language)
     - Updates LLM prompt, greeting message, and call transfer tools
     - Preserves existing custom LLM tools
@@ -640,6 +640,8 @@ async def get_agent_config(auth: AuthenticatedUser = Depends(require_role("owner
         row = res.data[0] if isinstance(res.data, list) else res.data
         if "emergency_forward_phone" in row and "transfer_phone_number" not in row:
             row["transfer_phone_number"] = row["emergency_forward_phone"]
+        row["webhook_url"] = f"{settings.WEBHOOK_BASE_URL or settings.API_BASE_URL}/api/v1/calle/webhook"
+        row["engine"] = "calle"
         return {"data": row}
     except HTTPException:
         raise
@@ -653,7 +655,7 @@ async def create_agent_config(
     auth: AuthenticatedUser = Depends(require_role("owner")),
 ):
     """
-    Create or upsert agent_config for the clinic. Compiles and pushes the prompt to Retell AI.
+    Create or upsert agent_config for the clinic. Compiles and pushes the prompt to CALL-E AI.
     """
     try:
         meta = await _get_clinic_metadata(auth.clinic_id, auth.clinic_name)
@@ -725,6 +727,8 @@ async def create_agent_config(
         saved_data = res.data[0] if isinstance(res.data, list) else res.data
         if "emergency_forward_phone" in saved_data and "transfer_phone_number" not in saved_data:
             saved_data["transfer_phone_number"] = saved_data["emergency_forward_phone"]
+        saved_data["webhook_url"] = f"{settings.WEBHOOK_BASE_URL or settings.API_BASE_URL}/api/v1/calle/webhook"
+        saved_data["engine"] = "calle"
 
         # Keep clinics.retell_agent_id synchronized
         try:
@@ -762,7 +766,7 @@ async def update_agent_config(
     auth: AuthenticatedUser = Depends(require_role("owner")),
 ):
     """
-    Update the clinic's agent_config and push refreshed prompt/voice/greeting to Retell AI.
+    Update the clinic's agent_config and push refreshed prompt/voice/greeting to CALL-E AI.
     """
     try:
         # Get existing config
@@ -858,6 +862,8 @@ async def update_agent_config(
                 )
             )
 
+        saved_data["webhook_url"] = f"{settings.WEBHOOK_BASE_URL or settings.API_BASE_URL}/api/v1/calle/webhook"
+        saved_data["engine"] = "calle"
         return {"data": saved_data}
     except HTTPException:
         raise

@@ -1,4 +1,4 @@
-﻿# CALL-E Hackathon Demo Video Script 🏥🎙️
+# CALL-E Hackathon Demo Video Script 🏥🎙️
 ### **Bytelytic Clinic OS — Autonomous Clinical Voice AI**
 **Hackathon:** *CALL-E: Your Code Is Calling*  
 **Duration:** Exactly 3 Minutes (03:00)  
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **0:00 - 0:25** | The Hook & Economic Crisis | The $150B Outpatient No-Show Crisis | Title card, live dashboard stats, red empty calendar slots |
 | **0:25 - 0:55** | CALL-E Architecture & Native SDK | Full-Stack Integration & Sub-Second SIP | Terminal code walkthrough: `calle-ai`, Render Docker logs, API Docs |
-| **0:55 - 1:45** | The 5 Autonomous Clinical Workflows | End-to-End Operational Automation | Interactive dashboard tour of the 5 campaigns |
+| **0:55 - 1:45** | 5 Clinical Workflows & Prior Auth IVR | End-to-End Operational Automation | Interactive dashboard tour of the 5 campaigns + Prior Auth IVR |
 | **1:45 - 2:25** | Live Outbound Call & Schema Extraction | Real-Time Agent Dialogue & Webhook Ingestion | Split screen: Dashboard dispatch + physical phone ringing + real-time webhook update |
 | **2:25 - 3:00** | Mathematical ROI & Production Wrap | $160/Visit Recovered & HIPAA Compliance | Financial recovery calculator, test suite verification, live links |
 
@@ -61,13 +61,14 @@
 
 ---
 
-### **[0:55 - 1:45] Segment 3: The 5 Autonomous Clinical Workflows**
+### **[0:55 - 1:45] Segment 3: The 5 Autonomous Clinical Workflows & Prior Auth IVR**
 **Visual on Screen:**  
 - Navigate to the **Autonomous Outbound Campaigns** tab (`/campaigns`).
 - Show the 5 campaign metric cards with real backlog estimates and live queue counts.
+- Quick switch to the **Prior Authorization Engine** (`/prior-auth`) displaying automated payor phone tree traversal.
 
 **Speaker (Paced and confident):**
-> *"Bytelytic OS runs five dedicated autonomous clinical campaigns—each built to automate critical touchpoints across the patient care continuum:*  
+> *"Bytelytic OS runs five dedicated autonomous clinical campaigns plus automated payor prior authorization:*  
 >  
 > *First: **24-Hour Pre-Visit Confirmations.** The agent dials unconfirmed patients, verifies attendance, and handles live reschedule requests before clinic doors open.*  
 >  
@@ -77,7 +78,9 @@
 >  
 > *Fourth: **Post-Visit NPS Quality Surveys.** Captures satisfaction and patient feedback within 24 hours of checkout.*  
 >  
-> *And Fifth: **Instant Waitlist Backfill.** The second an appointment is cancelled, CALL-E immediately dials prioritized waitlist patients, filling the calendar vacancy with zero human receptionist intervention."*
+> *Fifth: **Instant Waitlist Backfill.** The second an appointment is cancelled, CALL-E immediately dials prioritized waitlist patients, filling the calendar vacancy with zero human receptionist intervention.*  
+>  
+> *And Sixth: **Payor Prior Authorization IVR Navigation.** Navigating complex insurance phone trees using DTMF touch-tones to negotiate CPT codes and ICD-10 diagnoses with zero staff hold time."*
 
 ---
 
@@ -140,7 +143,7 @@
 **Speaker:**
 > *"The mathematics speak for themselves. In a clinic seeing 80 patients a day, recovering just 15 no-shows a week returns over one hundred and twenty-four thousand dollars in pure clinical revenue annually.*  
 >  
-> *Bytelytic Clinic OS is 100% HIPAA-compliant with zero PHI in logs, end-to-end AES-256 encryption, and 12/12 automated tests passing.*  
+> *Bytelytic Clinic OS is 100% HIPAA-compliant with zero PHI in logs, end-to-end AES-256 encryption, and 25/25 automated tests passing.*  
 >  
 > *It is deployed live right now on Vercel and Render for you to test.*  
 >  
@@ -157,3 +160,4 @@
 | **Structured Output Schema** | Webhook Processing | Pydantic JSON schema validation directly mapped to EHR PostgreSQL models |
 | **Real-World Impact** | ROI Analytics | Eliminates $150B no-show crisis with $160/visit recovered revenue model |
 | **Production Readiness** | Live Cloud Deployments | Live Vercel SPA + Dockerized Render API with SSL, Auth, and HIPAA scrubbers |
+| **Community Directory** | Awesome Agents PR | Submitted pull request in `applications/bytelytic-clinic-os/` |
