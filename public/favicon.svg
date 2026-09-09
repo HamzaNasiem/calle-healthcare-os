@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8CE055"/>
+      <stop offset="100%" stop-color="#6FBE3B"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded squircle container -->
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#brandGrad)"/>
+  <!-- Medical Plus / Cross Symbol -->
+  <rect x="26" y="14" width="12" height="36" rx="6" fill="#143224"/>
+  <rect x="14" y="26" width="36" height="12" rx="6" fill="#143224"/>
+</svg>
