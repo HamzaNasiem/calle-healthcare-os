@@ -82,7 +82,7 @@ const OutboundCampaigns = () => {
   const [singleRecallDays, setSingleRecallDays] = useState(30);
   const [singleSlotDate, setSingleSlotDate] = useState('Tomorrow');
   const [singleSlotTime, setSingleSlotTime] = useState('10:30 AM');
-  const [singleWaitForResult, setSingleWaitForResult] = useState(false); // Non-blocking dispatch for instant 1s phone ringing
+  const [singleWaitForResult, setSingleWaitForResult] = useState(true); // Wait for CALL-E completion → shows real structured JSON result to judges
   const [singleEngine, setSingleEngine] = useState('calle'); // 'calle' (hero autonomous task) | 'instant' (high-speed dial)
   const [singleSubmitting, setSingleSubmitting] = useState(false);
   const [singleStep, setSingleStep] = useState(1);
@@ -1001,83 +1001,122 @@ const OutboundCampaigns = () => {
               </div>
             ) : singleResult ? (
               /* Result Completed View */
-              <div className="space-y-4 rounded-xl bg-[#f7faf9] border border-[#edf1ef] p-4">
-                <div className="flex items-center justify-between border-b border-[#edf1ef] pb-3">
-                  <div className="flex items-center gap-2">
-                    {singleResult.status === 'failed' ? (
-                      <AlertCircle className="w-5 h-5 text-red-600" />
-                    ) : (
-                      <CheckCircle2 className="w-5 h-5 text-[#396a00]" />
-                    )}
-                    <h4 className="font-extrabold text-[#181c1c] text-sm">
-                      {singleResult.status === 'failed'
-                        ? 'Call Dispatch Failed'
-                        : singleResult.status === 'initiated' || singleResult.status === 'running' || singleResult.status === 'queued'
-                        ? 'Call Dispatched & Ringing'
-                        : 'Call Completed & Extracted'}
-                    </h4>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                    singleResult.status === 'failed'
-                      ? 'bg-red-100 text-red-800 border border-red-200'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              <div className="space-y-4">
+                {/* ── Status Header ── */}
+                <div className={`flex items-center gap-3 p-4 rounded-xl border-2 ${
+                  singleResult.status === 'failed'
+                    ? 'bg-red-50 border-red-300'
+                    : singleResult.status === 'queued' || singleResult.status === 'initiated' || singleResult.status === 'running'
+                    ? 'bg-amber-50 border-amber-300'
+                    : 'bg-emerald-50 border-emerald-400'
+                }`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    singleResult.status === 'failed' ? 'bg-red-100' :
+                    singleResult.status === 'queued' || singleResult.status === 'running' ? 'bg-amber-100' :
+                    'bg-emerald-100'
                   }`}>
-                    Status: {singleResult.status}
+                    {singleResult.status === 'failed'
+                      ? <AlertCircle className="w-5 h-5 text-red-600" />
+                      : singleResult.status === 'queued' || singleResult.status === 'running'
+                      ? <PhoneCall className="w-5 h-5 text-amber-600 animate-pulse" />
+                      : <CheckCircle2 className="w-5 h-5 text-emerald-700" />
+                    }
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-extrabold text-sm ${
+                      singleResult.status === 'failed' ? 'text-red-900' :
+                      singleResult.status === 'queued' || singleResult.status === 'running' ? 'text-amber-900' :
+                      'text-emerald-900'
+                    }`}>
+                      {singleResult.status === 'failed' ? '❌ Call Failed'
+                        : singleResult.status === 'queued' || singleResult.status === 'running' ? '📞 Call Ringing / In Progress'
+                        : '✅ CALL-E Call Completed — Result Extracted'}
+                    </p>
+                    <p className="text-[11px] text-[#3d4946] mt-0.5 truncate">
+                      {singleResult.summary || 'CALL-E autonomous agent processed the call.'}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wide flex-shrink-0 ${
+                    singleResult.status === 'failed' ? 'bg-red-200 text-red-900' :
+                    singleResult.status === 'queued' || singleResult.status === 'running' ? 'bg-amber-200 text-amber-900' :
+                    'bg-emerald-200 text-emerald-900'
+                  }`}>
+                    {singleResult.status}
                   </span>
                 </div>
 
+                {/* ── Error Notice ── */}
                 {(singleResult.status === 'failed' || singleResult.error || singleResult.reason) && (
                   <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-900 text-xs flex items-start gap-2.5">
                     <AlertCircle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <p className="font-bold text-red-950">Dispatch Error</p>
-                      <p className="text-[11px] text-red-900/90 leading-relaxed">
-                        {singleResult.error || singleResult.reason || singleResult.message || 'Call failed to dispatch.'}
+                    <div>
+                      <p className="font-bold">Error Detail</p>
+                      <p className="text-[11px] mt-0.5 leading-relaxed">{singleResult.error || singleResult.reason || singleResult.message || 'Dispatch failed.'}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Extracted JSON Result — HERO DISPLAY ── */}
+                {singleResult.structured_result && Object.keys(singleResult.structured_result).length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-extrabold text-[#181c1c] flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-[#396a00]" />
+                        CALL-E Extracted Result
                       </p>
-                    </div>
-                  </div>
-                )}
-
-                {singleResult.warning && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2.5">
-                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <div className="space-y-0.5">
-                      <p className="font-bold text-amber-950">Engine Notice</p>
-                      <p className="text-[11px] text-amber-900/90 leading-relaxed">{singleResult.warning}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-2 text-xs">
-                  <p className="text-[#3d4946]">
-                    <strong className="text-[#181c1c]">Summary:</strong>{' '}
-                    {singleResult.summary ||
-                      (singleResult.status === 'initiated'
-                        ? 'Telephony session dispatched. Patient phone is currently ringing.'
-                        : 'Call record processed and verified.')}
-                  </p>
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-bold text-[#181c1c] mb-1">
-                      <span>Extracted JSON Schema Result:</span>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(JSON.stringify(singleResult.structured_result || {}, null, 2));
+                          navigator.clipboard.writeText(JSON.stringify(singleResult.structured_result, null, 2));
                           setSingleCopied(true);
                           setTimeout(() => setSingleCopied(false), 2000);
                         }}
-                        className="flex items-center gap-1 text-[#396a00] hover:text-emerald-700 font-mono font-bold"
+                        className="flex items-center gap-1 text-[11px] text-[#396a00] hover:text-emerald-700 font-bold"
                       >
                         {singleCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                        <span>{singleCopied ? 'Copied' : 'Copy JSON'}</span>
+                        {singleCopied ? 'Copied!' : 'Copy JSON'}
                       </button>
                     </div>
-                    <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 font-mono text-[11px] overflow-x-auto border border-slate-800">
-                      {JSON.stringify(singleResult.structured_result || {}, null, 2)}
+
+                    {/* Colored field pills */}
+                    <div className="grid grid-cols-1 gap-2">
+                      {Object.entries(singleResult.structured_result).map(([key, val]) => {
+                        const isPositive = val === true || val === 'yes' || val === 'approved' || val === 'confirmed';
+                        const isNegative = val === false || val === 'no' || val === 'denied' || val === 'refused';
+                        return (
+                          <div key={key} className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border font-medium ${
+                            isPositive ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+                            isNegative ? 'bg-red-50 border-red-200 text-red-900' :
+                            'bg-[#f7faf9] border-[#edf1ef] text-[#181c1c]'
+                          }`}>
+                            <span className="text-[11px] font-mono text-[#3d4946]">{key}</span>
+                            <span className={`text-xs font-extrabold ${
+                              isPositive ? 'text-emerald-700' :
+                              isNegative ? 'text-red-700' :
+                              'text-[#181c1c]'
+                            }`}>
+                              {val === true ? '✓ true' : val === false ? '✗ false' : String(val) || '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Raw JSON */}
+                    <pre className="p-3 rounded-lg bg-slate-900 text-emerald-300 font-mono text-[11px] overflow-x-auto border border-slate-800 leading-relaxed">
+                      {JSON.stringify(singleResult.structured_result, null, 2)}
                     </pre>
                   </div>
-                </div>
+                )}
 
-                <div className="flex items-center justify-end gap-2 pt-2">
+                {/* No result yet (queued/initiated) */}
+                {(!singleResult.structured_result || Object.keys(singleResult.structured_result).length === 0) && singleResult.status !== 'failed' && (
+                  <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs text-center space-y-1">
+                    <p className="font-bold">📞 Call dispatched — result pending</p>
+                    <p className="text-[11px]">The call is ringing. Enable "Live Result Mode" and wait for completion to see extracted JSON.</p>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setSingleResult(null)}
@@ -1087,11 +1126,11 @@ const OutboundCampaigns = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowSingleModal(false)}
+                    onClick={() => { setShowSingleModal(false); setActiveMainTab('feed'); }}
                     className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm"
                     style={{ background: 'linear-gradient(135deg, #396a00 0%, #4d8a00 100%)' }}
                   >
-                    Done & View Feed
+                    View in Activity Feed
                   </button>
                 </div>
               </div>
@@ -1298,19 +1337,35 @@ const OutboundCampaigns = () => {
                   </span>
                 </div>
 
-                <div className="p-3 rounded-xl bg-[#f7faf9] border border-[#edf1ef] flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-[#181c1c]">Wait for Call Completion</p>
-                    <p className="text-[11px] text-[#3d4946]">
-                      Hold browser connection open until caller hangs up (Turn OFF for instant 1s dispatch)
+                {/* ── LIVE RESULT MODE Banner ─────────────────────────────── */}
+                <div
+                  onClick={() => setSingleWaitForResult(v => !v)}
+                  className={`cursor-pointer p-4 rounded-xl border-2 flex items-start justify-between gap-4 transition-all ${
+                    singleWaitForResult
+                      ? 'bg-emerald-50 border-emerald-400 shadow-sm shadow-emerald-200'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-extrabold tracking-tight ${singleWaitForResult ? 'text-emerald-900' : 'text-[#3d4946]'}`}>
+                        {singleWaitForResult ? '🟢 LIVE RESULT MODE — ON' : '⚪ LIVE RESULT MODE — OFF'}
+                      </span>
+                      {singleWaitForResult && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500 text-white animate-pulse">
+                          RECOMMENDED
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[#3d4946] leading-relaxed">
+                      {singleWaitForResult
+                        ? 'CALL-E will complete the full call and return the extracted JSON schema result live on this screen.'
+                        : 'Fire-and-forget mode — call dispatches instantly but no result is shown here.'}
                     </p>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={singleWaitForResult}
-                    onChange={e => setSingleWaitForResult(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#396a00] focus:ring-[#396a00] accent-[#396a00]"
-                  />
+                  <div className={`w-11 h-6 rounded-full flex-shrink-0 flex items-center transition-all ${singleWaitForResult ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                    <div className={`w-5 h-5 rounded-full bg-white shadow transition-all mx-0.5 ${singleWaitForResult ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </div>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-3">
