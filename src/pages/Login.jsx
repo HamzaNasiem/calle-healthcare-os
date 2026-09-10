@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { 
   Mail, Lock, ArrowRight, AlertCircle, 
-  Building2, User, Clock, CalendarDays, CheckCircle2, Loader2, Shield
+  Building2, User, Clock, CalendarDays, CheckCircle2, Loader2, Shield,
+  Sparkles, PhoneCall, Zap
 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -286,20 +287,25 @@ const Login = () => {
       <div className="flex-1 flex flex-col justify-center items-center px-8 py-12 bg-surface">
         <div className="w-full max-w-sm">
           {/* Logo */}
-          <div className="flex items-center gap-2.5 mb-8">
-            <div
-              className="w-9 h-9 rounded-[0.5rem] flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: "#7FCD4D" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <rect x="5.5" y="1" width="3" height="12" rx="1.5" fill="#1a3a2e"/>
-                <rect x="1" y="5.5" width="12" height="3" rx="1.5" fill="#1a3a2e"/>
-              </svg>
+          <div className="flex items-center justify-between gap-2.5 mb-8">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-9 h-9 rounded-[0.5rem] flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: "#7FCD4D" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <rect x="5.5" y="1" width="3" height="12" rx="1.5" fill="#1a3a2e"/>
+                  <rect x="1" y="5.5" width="12" height="3" rx="1.5" fill="#1a3a2e"/>
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-extrabold text-on-surface tracking-tight uppercase leading-none">BYTELYTIC</p>
+                <p className="text-sm font-extrabold text-on-surface tracking-tight uppercase leading-none mt-0.5">CLINIC OS</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-extrabold text-on-surface tracking-tight uppercase leading-none">BYTELYTIC</p>
-              <p className="text-sm font-extrabold text-on-surface tracking-tight uppercase leading-none mt-0.5">CLINIC</p>
-            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200/80 flex items-center gap-1 shadow-xs">
+              <Zap className="w-3 h-3 text-[#396a00]" /> CALL-E v0.6.0
+            </span>
           </div>          {mfaRequired ? (
             <>
               {/* Heading */}
@@ -371,12 +377,34 @@ const Login = () => {
           ) : (
             <>
               {/* Heading */}
-              <h1 className="text-[1.75rem] font-medium text-on-surface mb-1 tracking-tight">
+              <h1 className="text-[1.75rem] font-bold text-on-surface mb-1 tracking-tight">
                 Welcome back
               </h1>
-              <p className="text-sm text-on-surface-variant mb-6 mt-1">
-                Sign in to your clinic dashboard
+              <p className="text-xs text-on-surface-variant mb-4 mt-1">
+                Sign in to your clinical voice operating system
               </p>
+
+              {/* ── Hackathon Quick Access Card ── */}
+              <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/90 text-xs flex items-center justify-between shadow-xs">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-extrabold text-emerald-950 tracking-tight">CALL-E Hackathon Demo</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-900/80 font-mono">admin@callehealthcare.com</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("admin@callehealthcare.com");
+                    setPassword("Password123!");
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold text-white shadow-xs transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
+                  style={{ background: "linear-gradient(135deg, #396a00 0%, #4d8a00 100%)" }}
+                >
+                  <Sparkles className="w-3 h-3" /> Auto-Fill
+                </button>
+              </div>
 
               <form className="space-y-4" onSubmit={handleLogin}>
                 {error && (
@@ -483,56 +511,87 @@ const Login = () => {
           style={{ backgroundColor: "#7FCD4D" }}
         />
 
-        {/* Top logo */}
-        <div className="flex items-center gap-2.5 relative z-10">
-          <div
-            className="w-9 h-9 rounded-[0.5rem] flex items-center justify-center"
-            style={{ backgroundColor: "#7FCD4D" }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="5.5" y="1" width="3" height="12" rx="1.5" fill="#1a3a2e"/>
-              <rect x="1" y="5.5" width="12" height="3" rx="1.5" fill="#1a3a2e"/>
-            </svg>
+        {/* Top logo & Hackathon badge */}
+        <div className="flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-9 h-9 rounded-[0.5rem] flex items-center justify-center"
+              style={{ backgroundColor: "#7FCD4D" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="5.5" y="1" width="3" height="12" rx="1.5" fill="#1a3a2e"/>
+                <rect x="1" y="5.5" width="12" height="3" rx="1.5" fill="#1a3a2e"/>
+              </svg>
+            </div>
+            <div>
+              <p className="text-white font-extrabold text-sm uppercase leading-none">BYTELYTIC</p>
+              <p className="text-white font-extrabold text-sm uppercase leading-none mt-0.5">CLINIC OS</p>
+            </div>
           </div>
-          <div>
-            <p className="text-white font-extrabold text-sm uppercase leading-none">BYTELYTIC</p>
-            <p className="text-white font-extrabold text-sm uppercase leading-none mt-0.5">CLINIC</p>
-          </div>
+          <span className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-[#7FCD4D] text-[11px] font-bold flex items-center gap-1.5 backdrop-blur-xs">
+            <span className="w-2 h-2 rounded-full bg-[#7FCD4D] animate-ping" />
+            CALL-E Hackathon
+          </span>
         </div>
 
-        {/* Center copy */}
-        <div className="relative z-10">
-          <h2 className="text-4xl font-light text-white leading-snug mb-4">
-            Your AI Front Desk.
+        {/* Center copy — CALL-E Hackathon Theme */}
+        <div className="relative z-10 my-auto py-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30 text-[#7FCD4D] text-[11px] font-mono font-bold uppercase tracking-wider mb-4">
+            <span>🎙️ API 0.6.0 NATIVE</span>
+            <span className="text-white/40">·</span>
+            <span>calle-ai SDK</span>
+          </div>
+
+          <h2 className="text-3xl xl:text-4xl font-light text-white leading-tight mb-4">
+            Your Code Is Calling.
             <br />
-            <span style={{ color: "#7FCD4D" }}>Always On.</span>
+            <span style={{ color: "#7FCD4D" }} className="font-extrabold">Autonomous Clinical AI.</span>
           </h2>
-          <p className="text-white/60 text-sm leading-relaxed max-w-xs">
-            Automated appointment booking, 24/7 patient calls, and revenue
-            recovery — all handled by AI while you focus on care.
+          <p className="text-white/70 text-sm leading-relaxed max-w-sm mb-6">
+            Production-grade clinical operations platform solving the $150 Billion outpatient no-show crisis with autonomous CALL-E voice agents.
           </p>
 
-          <div className="mt-8 space-y-3">
+          <div className="space-y-2.5">
             {[
-              "Answers every call, 24/7",
-              "Books appointments automatically",
-              "Sends reminders & follow-ups",
+              {
+                title: "6 Autonomous Clinical Workflows",
+                sub: "Confirmations, No-Shows, Recalls, NPS Surveys, Waitlists & Prior Auth",
+              },
+              {
+                title: "Deterministic Structured JSON Extraction",
+                sub: "Strict JSON schema parsing updates EHR calendar without human staff",
+              },
+              {
+                title: "100% Native CALL-E Python SDK",
+                sub: "Full create_and_wait protocol, goal runs, and secure webhook sync",
+              },
+              {
+                title: "HIPAA-Safe Architectural Safeguards",
+                sub: "Zero ePHI in logs, PHIScrubberFilter, AES-256 encryption",
+              },
             ].map((feat) => (
-              <div key={feat} className="flex items-center gap-3">
+              <div
+                key={feat.title}
+                className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.06] border border-white/10 hover:bg-white/[0.1] transition-all backdrop-blur-xs"
+              >
                 <div
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                  className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
                   style={{ backgroundColor: "#7FCD4D" }}
                 />
-                <span className="text-white/70 text-sm">{feat}</span>
+                <div>
+                  <p className="text-white font-bold text-xs tracking-tight">{feat.title}</p>
+                  <p className="text-white/60 text-[11px] leading-snug mt-0.5">{feat.sub}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
         {/* Bottom tagline */}
-        <p className="text-white/30 text-xs relative z-10">
-          Bytelytic OS · bytelytic.com
-        </p>
+        <div className="pt-4 border-t border-white/10 flex items-center justify-between text-xs text-white/50 relative z-10">
+          <span>Bytelytic OS × CALL-E</span>
+          <span className="font-mono text-[11px] text-[#7FCD4D]">Official Hackathon Submission</span>
+        </div>
       </div>
 
       {/* Google Setup/Onboarding Modal Dialog */}
